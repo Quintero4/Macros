@@ -13,9 +13,17 @@ Private Function ParseFechaSinLocale(ByVal valor As Variant) As Variant
     Dim partes() As String
     Dim d As Integer, m As Integer, y As Integer
 
-    ' Fecha real de Excel o número de serie: no hay ambigüedad, se usa tal cual
+    ' Fecha real de Excel: si el día es <= 12, el origen la guarda con día y mes intercambiados
+    ' (interpretación americana), así que se vuelven a intercambiar.
     Select Case VarType(valor)
-        Case vbDate, vbDouble, vbInteger, vbLong, vbSingle, vbCurrency
+        Case vbDate
+            If Day(valor) <= 12 Then
+                ParseFechaSinLocale = DateSerial(Year(valor), Day(valor), Month(valor))
+            Else
+                ParseFechaSinLocale = valor
+            End If
+            Exit Function
+        Case vbDouble, vbInteger, vbLong, vbSingle, vbCurrency
             ParseFechaSinLocale = valor
             Exit Function
     End Select
@@ -130,15 +138,13 @@ Sub GenerarInformeFOD(Optional ByVal rutaCarpetaWbFicheroFuenteFOD As String)
     Dim rutaInformes As String
     Dim rutaFinal As String
     Dim numeroArchivoConMismoNombre As Integer
-    Dim errNum As Long
-    Dim errDesc As String
 
     ' Desactivar actualizaciones para mejorar el rendimiento
     Application.ScreenUpdating = False
     Application.Calculation = xlCalculationManual
     Application.EnableEvents = False
 
-    On Error GoTo ManejadorError
+    On Error GoTo SafeExit
 
     ' Inicializar la fecha actual
     currentDate = Date
@@ -148,7 +154,7 @@ Sub GenerarInformeFOD(Optional ByVal rutaCarpetaWbFicheroFuenteFOD As String)
     '-----------------------------------------------------------------------------------
     On Error Resume Next
     Set libreriaModulos = Workbooks.Open("\\Spi60001.eadscasa.casa.corp\a400m san pablo\Lean_Manufacturing\10.- PCM\28. PCM\Development enviroment\LibreriaModulos\LibreriaModulosConFuncionesReutilizables.xlsm")
-    On Error GoTo ManejadorError
+    On Error GoTo SafeExit
 
     '-----------------------------------------------------------------------------------
     ' OBTENER Y ABRIR EL ARCHIVO DE DATOS "My Team All Learning"
@@ -287,7 +293,7 @@ Sub GenerarInformeFOD(Optional ByVal rutaCarpetaWbFicheroFuenteFOD As String)
                     Err.Clear
                     personaData("Siglum") = ""
                 End If
-                On Error GoTo ManejadorError
+                On Error GoTo SafeExit
 
                 personaData("InitialFODStatus") = ""
                 personaData("InitialFODFecha") = ""
@@ -534,7 +540,7 @@ NextIteration:
     rutaInformes = ThisWorkbook.Path & "\Informes\"
     If Dir(rutaInformes, vbDirectory) = "" Then MkDir rutaInformes
 
-    nombreInforme = "TAOA FOD " & Format$(Date, "yyyy-mm-dd")
+    nombreInforme = "TAOA FOD " & Application.WorksheetFunction.Text(Date, "mmm.dd.yyyy")
     extensionInforme = ".xlsx"
     rutaFinal = rutaInformes & nombreInforme & extensionInforme
 
@@ -552,9 +558,6 @@ NextIteration:
     If Not wbData Is Nothing Then wbData.Close SaveChanges:=False
 
     If isMacroEjecutadaDesdeMacroCurriculums Then
-        Application.ScreenUpdating = True
-        Application.Calculation = xlCalculationAutomatic
-        Application.EnableEvents = True
         ThisWorkbook.Close SaveChanges:=True
     Else
         If Not wbMacroCurriculum Is Nothing Then wbMacroCurriculum.Close SaveChanges:=False
@@ -562,35 +565,10 @@ NextIteration:
     End If
 
 SafeExit:
-    ' Cerrar libros que pudieran haber quedado abiertos (salidas anticipadas)
-    On Error Resume Next
-    If Not wbData Is Nothing Then wbData.Close SaveChanges:=False
-    If Not libreriaModulos Is Nothing Then libreriaModulos.Close SaveChanges:=False
-    On Error GoTo 0
-
     ' Restaurar configuraciones
-    Application.DisplayAlerts = True
     Application.ScreenUpdating = True
     Application.Calculation = xlCalculationAutomatic
     Application.EnableEvents = True
-    Exit Sub
-
-ManejadorError:
-    errNum = Err.Number
-    errDesc = Err.Description
-    Resume ErrorLimpieza
-
-ErrorLimpieza:
-    On Error Resume Next
-    If Not wbData Is Nothing Then wbData.Close SaveChanges:=False
-    If Not libreriaModulos Is Nothing Then libreriaModulos.Close SaveChanges:=False
-    Application.DisplayAlerts = True
-    Application.ScreenUpdating = True
-    Application.Calculation = xlCalculationAutomatic
-    Application.EnableEvents = True
-    MsgBox "Se produjo un error." & vbCrLf & _
-           IIf(i > 0, "Fila de datos: " & i & vbCrLf, "") & _
-           "Error " & errNum & ": " & errDesc, vbCritical
 End Sub
 
 '-----------------------------------------------------------------------------------
