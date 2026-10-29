@@ -1,0 +1,827 @@
+Option Explicit
+
+'===================================================================================
+' CONFIGURACIÓN (todo lo "fijo" del código está aquí arriba)
+'===================================================================================
+Private Const RUTA_BASE_PCM As String = "\\Spi60001.eadscasa.casa.corp\a400m san pablo\Lean_Manufacturing\10.- PCM\28. PCM\"
+Private Const RUTA_LIBRERIA As String = RUTA_BASE_PCM & "Development enviroment\LibreriaModulos\LibreriaModulosConFuncionesReutilizables.xlsm"
+Private Const NOMBRE_LIBRERIA As String = "LibreriaModulosConFuncionesReutilizables.xlsm"
+Private Const RUTA_FUENTE_DEFECTO As String = RUTA_BASE_PCM & "1.1.7 Macro Unificar All Learning\Output\"
+Private Const RUTA_MACRO_CURRICULUMS As String = RUTA_BASE_PCM & "1.1.3 Macro Curriculums\Macro Curriculums.xlsm"
+Private Const NOMBRE_LIBRO_CURRICULUMS As String = "Macro Curriculums.xlsm"
+Private Const PREFIJO_FICHERO_FUENTE As String = "My Team All Learning_"
+
+Private Const HOJA_DATOS As String = "My Team All Learning"
+Private Const HOJA_CONFIG As String = "Configuración"
+Private Const HOJA_INACTIVOS As String = "Usuarios_Inactivos"
+Private Const HOJA_INFORME As String = "Informe FOD"
+Private Const HOJA_RESUMEN As String = "Resumen FOD"
+
+Private Const TEXTO_FILTRO_FOD As String = "FOD"
+Private Const FILTRO_SIGLUM As String = "TAOA"
+
+Private Const DIAS_CADUCIDAD As Long = 730             ' Igual que el original: 730 días
+Private Const CADUCA_EQUIVALENT As Boolean = False     ' Igual que el original: Equivalent nunca caduca
+Private Const ACEPTAR_FECHAS_NUMERICAS As Boolean = False ' Igual que el original: números sueltos NO son fechas
+Private Const GUARDAR_LIBRO_MACRO_AL_CERRAR As Boolean = False ' Solo aplica si se lanza desde Macro Curriculums
+
+Private Const FILA_INICIO_INFORME As Long = 3
+Private Const COL_OFFSET As Long = 6                   ' Columna F: primera columna de estados en el informe
+
+' Columnas de la hoja "My Team All Learning" (número de columna)
+Private Const C_APELLIDOS As Long = 1        ' A
+Private Const C_NOMBRE As Long = 2           ' B
+Private Const C_CURSO As Long = 5            ' E
+Private Const C_ESTADO As Long = 6           ' F
+Private Const C_FECHA_OTRA As Long = 8       ' H
+Private Const C_FECHA_REGISTRO As Long = 10  ' J
+Private Const C_FECHA_FIN As Long = 11       ' K
+Private Const C_SIGLUM As Long = 18          ' R
+Private Const C_ID As Long = 19              ' S
+Private Const C_MANAGER As Long = 20         ' T
+Private Const ULTIMA_COL_DATOS As Long = 20  ' T
+
+Private Const ESTADO_CADUCADO As String = "Completed (Caducado)"
+Private Const ESTADO_PENDIENTE As String = "Pending"
+
+'===================================================================================
+' FUNCIONES AUXILIARES
+'===================================================================================
+
+Private Function CleanStatus(ByVal s As Variant) As String
+    If IsError(s) Then
+        CleanStatus = ""
+    ElseIf IsEmpty(s) Or IsNull(s) Then
+        CleanStatus = ""
+    Else
+        CleanStatus = UCase$(Trim$(CStr(s)))
+    End If
+End Function
+
+' Devuelve el texto de una celda/variante sin espacios (incluye espacios no separables)
+' y sin fallar si la celda contiene un error (#N/D, #REF!, etc.).
+Private Function TextoSeguro(ByVal v As Variant) As String
+    If IsError(v) Then Exit Function
+    If IsEmpty(v) Then Exit Function
+    If IsNull(v) Then Exit Function
+    TextoSeguro = Trim$(Replace(CStr(v), Chr$(160), " "))
+End Function
+
+' Convierte una cadena formada solo por dígitos en Long. Devuelve -1 si no lo es.
+Private Function NumeroSeguro(ByVal txt As String) As Long
+    txt = Trim$(txt)
+    If Len(txt) = 0 Or Len(txt) > 9 Then
+        NumeroSeguro = -1
+        Exit Function
+    End If
+    If txt Like "*[!0-9]*" Then
+        NumeroSeguro = -1
+        Exit Function
+    End If
+    NumeroSeguro = CLng(txt)
+End Function
+
+' Mes en número (1-12) o en texto (ene/jan, feb, mar, abr/apr, ...). Devuelve -1 si no se reconoce.
+Private Function MesDesdeTexto(ByVal txt As String) As Long
+    txt = Trim$(txt)
+    If Len(txt) = 0 Then
+        MesDesdeTexto = -1
+        Exit Function
+    End If
+
+    If txt Like "*[!0-9]*" Then
+        Select Case LCase$(Left$(txt, 3))
+            Case "ene", "jan": MesDesdeTexto = 1
+            Case "feb": MesDesdeTexto = 2
+            Case "mar": MesDesdeTexto = 3
+            Case "abr", "apr": MesDesdeTexto = 4
+            Case "may": MesDesdeTexto = 5
+            Case "jun": MesDesdeTexto = 6
+            Case "jul": MesDesdeTexto = 7
+            Case "ago", "aug": MesDesdeTexto = 8
+            Case "sep", "set": MesDesdeTexto = 9
+            Case "oct": MesDesdeTexto = 10
+            Case "nov": MesDesdeTexto = 11
+            Case "dic", "dec": MesDesdeTexto = 12
+            Case Else: MesDesdeTexto = -1
+        End Select
+    Else
+        MesDesdeTexto = NumeroSeguro(txt)
+    End If
+End Function
+
+Private Function EsSerialValido(ByVal n As Double) As Boolean
+    EsSerialValido = (n >= 1 And n <= 2958465)   ' 01/01/1900 a 31/12/9999
+End Function
+
+' Convierte cualquier valor (fecha real, número de serie o texto) en fecha sin depender
+' de la configuración regional. Devuelve Empty si no es una fecha válida.
+' Textos: dd/mm/yyyy, dd-mm-yyyy, dd.mm.yyyy, yyyy-mm-dd, dd-mmm-yyyy, con o sin hora.
+' Si el segundo número es > 12 y el primero <= 12 se interpreta como mm/dd/yyyy (sin ambigüedad).
+' Si es ambiguo (ej. 03/04/2024) se asume SIEMPRE día/mes/año.
+Private Function ParseFechaSinLocale(ByVal valor As Variant) As Variant
+    Dim s As String
+    Dim posEspacio As Long
+    Dim partes() As String
+    Dim p0 As String, p1 As String, p2 As String
+    Dim d As Long, m As Long, y As Long, tmp As Long
+    Dim resultado As Date
+
+    ParseFechaSinLocale = Empty
+
+    If IsError(valor) Then Exit Function
+    If IsEmpty(valor) Then Exit Function
+    If IsNull(valor) Then Exit Function
+
+    Select Case VarType(valor)
+        Case vbDate
+            ParseFechaSinLocale = CDate(valor)
+            Exit Function
+        Case vbDouble, vbInteger, vbLong, vbSingle, vbCurrency
+            If ACEPTAR_FECHAS_NUMERICAS Then
+                If EsSerialValido(CDbl(valor)) Then ParseFechaSinLocale = CDate(CDbl(valor))
+            End If
+            Exit Function
+    End Select
+
+    s = TextoSeguro(valor)
+    If Len(s) = 0 Then Exit Function
+
+    ' Formato ISO con "T" (2024-05-12T10:30:00)
+    If Len(s) > 10 Then
+        If Mid$(s, 11, 1) = "T" Then s = Left$(s, 10)
+    End If
+
+    ' Quitar la parte horaria ("12/05/2024 10:30")
+    posEspacio = InStr(s, " ")
+    If posEspacio > 0 Then
+        If InStr(posEspacio, s, ":") > 0 Then s = Trim$(Left$(s, posEspacio - 1))
+    End If
+
+    ' Texto que es solo un número entero: número de serie de Excel
+    If InStr(s, "/") = 0 And InStr(s, "-") = 0 And InStr(s, ".") = 0 _
+       And InStr(s, ",") = 0 And InStr(s, " ") = 0 Then
+        If ACEPTAR_FECHAS_NUMERICAS Then
+            tmp = NumeroSeguro(s)
+            If tmp >= 1 Then
+                If EsSerialValido(tmp) Then ParseFechaSinLocale = CDate(tmp)
+            End If
+        End If
+        Exit Function
+    End If
+
+    s = Replace(s, ".", "/")
+    s = Replace(s, "-", "/")
+    s = Replace(s, " ", "/")
+    partes = Split(s, "/")
+    If UBound(partes) <> 2 Then Exit Function
+
+    p0 = Trim$(partes(0))
+    p1 = Trim$(partes(1))
+    p2 = Trim$(partes(2))
+
+    If Len(p0) = 4 And NumeroSeguro(p0) >= 0 Then
+        ' yyyy/mm/dd
+        y = NumeroSeguro(p0)
+        m = MesDesdeTexto(p1)
+        d = NumeroSeguro(p2)
+    Else
+        ' dd/mm/yyyy
+        d = NumeroSeguro(p0)
+        m = MesDesdeTexto(p1)
+        y = NumeroSeguro(p2)
+        If m > 12 And d >= 1 And d <= 12 Then
+            tmp = d
+            d = m
+            m = tmp
+        End If
+        If y >= 0 And y < 100 Then y = y + 2000
+    End If
+
+    If y < 1900 Or y > 9999 Or m < 1 Or m > 12 Or d < 1 Or d > 31 Then Exit Function
+
+    resultado = DateSerial(y, m, d)
+    If Day(resultado) <> d Or Month(resultado) <> m Then Exit Function   ' ej. 31/04
+
+    ParseFechaSinLocale = resultado
+End Function
+
+' Fecha del curso: primero fecha de finalización (K), si no la de registro (J), si no la otra (H).
+Private Function FechaDelCurso(ByVal fFin As Variant, ByVal fRegistro As Variant, ByVal fOtra As Variant) As Variant
+    Dim f As Variant
+
+    FechaDelCurso = Empty
+
+    f = ParseFechaSinLocale(fFin)
+    If IsDate(f) Then
+        FechaDelCurso = DateSerial(Year(f), Month(f), Day(f))
+        Exit Function
+    End If
+
+    f = ParseFechaSinLocale(fRegistro)
+    If IsDate(f) Then
+        FechaDelCurso = DateSerial(Year(f), Month(f), Day(f))
+        Exit Function
+    End If
+
+    f = ParseFechaSinLocale(fOtra)
+    If IsDate(f) Then
+        FechaDelCurso = DateSerial(Year(f), Month(f), Day(f))
+    End If
+End Function
+
+Private Function EstaCaducado(ByVal fecha As Variant, ByVal hoy As Date) As Boolean
+    EstaCaducado = (DateDiff("d", CDate(fecha), hoy) >= DIAS_CADUCIDAD)
+End Function
+
+' Estado normalizado ("" si no es uno de los estados válidos)
+Private Function EstadoCanonico(ByVal v As Variant) As String
+    Select Case CleanStatus(v)
+        Case "COMPLETED": EstadoCanonico = "Completed"
+        Case "REGISTERED": EstadoCanonico = "Registered"
+        Case "EXEMPT": EstadoCanonico = "Exempt"
+        Case "COMPLETED (EQUIVALENT)": EstadoCanonico = "Completed (Equivalent)"
+        Case Else: EstadoCanonico = ""
+    End Select
+End Function
+
+Private Function PrioridadEstado(ByVal estado As String) As Long
+    Select Case estado
+        Case "Completed": PrioridadEstado = 4
+        Case "Completed (Equivalent)": PrioridadEstado = 3
+        Case "Exempt": PrioridadEstado = 2
+        Case "Registered": PrioridadEstado = 1
+        Case Else: PrioridadEstado = 0
+    End Select
+End Function
+
+' Decide si un registro nuevo debe sustituir al que ya está guardado:
+'  - Si no hay nada guardado, se guarda.
+'  - Si el nuevo no tiene fecha, nunca sustituye a algo ya guardado.
+'  - Si el guardado no tiene fecha, lo sustituye cualquier registro con fecha.
+'  - Gana la fecha más reciente; en caso de empate, gana el estado de mayor prioridad.
+Private Function DebeReemplazar(ByVal estadoNuevo As String, ByVal fechaNueva As Variant, _
+                                ByVal estadoActual As String, ByVal fechaActual As Variant) As Boolean
+    If Not IsDate(fechaNueva) Then
+        DebeReemplazar = False
+    ElseIf Not IsDate(fechaActual) Then
+        DebeReemplazar = True
+    Else
+        DebeReemplazar = (CDate(fechaNueva) > CDate(fechaActual))
+    End If
+End Function
+
+Private Function ColorEstado(ByVal estado As String) As Long
+    Select Case estado
+        Case "Completed", "Completed (Equivalent)", "Exempt"
+            ColorEstado = RGB(0, 128, 0)
+        Case "Registered"
+            ColorEstado = RGB(0, 0, 255)
+        Case ESTADO_CADUCADO
+            ColorEstado = RGB(255, 165, 0)
+        Case Else
+            ColorEstado = RGB(255, 0, 0)
+    End Select
+End Function
+
+Private Function EsSi(ByVal v As Variant) As Boolean
+    Dim t As String
+    t = UCase$(TextoSeguro(v))
+    EsSi = (t = "SI" Or t = "S" & ChrW(205))
+End Function
+
+Private Function ExtraerSiglum(ByVal v As Variant) As String
+    Dim partes() As String
+    partes = Split(TextoSeguro(v), " \ ")
+    If UBound(partes) >= 1 Then ExtraerSiglum = Trim$(partes(1))
+End Function
+
+Private Function CrearDiccionarioTexto() As Object
+    Dim d As Object
+    Set d = CreateObject("Scripting.Dictionary")
+    d.CompareMode = vbTextCompare   ' sin distinguir mayúsculas/minúsculas (debe fijarse con el diccionario vacío)
+    Set CrearDiccionarioTexto = d
+End Function
+
+Private Function EstaEnConjunto(ByVal nombre As String, ByVal conjunto As Object) As Boolean
+    If Len(nombre) = 0 Then
+        EstaEnConjunto = False
+    Else
+        EstaEnConjunto = conjunto.Exists(nombre)
+    End If
+End Function
+
+Private Function ExisteHoja(ByVal wb As Workbook, ByVal nombre As String) As Boolean
+    Dim ws As Object
+    On Error Resume Next
+    Set ws = wb.Sheets(nombre)
+    ExisteHoja = Not (ws Is Nothing)
+    On Error GoTo 0
+End Function
+
+Private Function ObtenerLibroAbierto(ByVal nombre As String) As Workbook
+    Dim wb As Workbook
+    For Each wb In Workbooks
+        If StrComp(wb.Name, nombre, vbTextCompare) = 0 Then
+            Set ObtenerLibroAbierto = wb
+            Exit Function
+        End If
+    Next wb
+End Function
+
+'===================================================================================
+' PROCEDIMIENTOS PRINCIPALES
+'===================================================================================
+
+Sub Main()
+    GenerarInformeFOD
+End Sub
+
+Sub GenerarInformeFOD(Optional ByVal rutaCarpetaWbFicheroFuenteFOD As String = "")
+
+    ' --- Libros y hojas ---
+    Dim libreriaModulos As Workbook
+    Dim wbData As Workbook
+    Dim wbMacroCurriculum As Workbook
+    Dim informeWB As Workbook
+    Dim wsData As Worksheet
+    Dim wsConfig As Worksheet
+    Dim wsInactivos As Worksheet
+    Dim wsReport As Worksheet
+    Dim abrioLibreria As Boolean
+    Dim abrioMacroCurriculum As Boolean
+    Dim isMacroEjecutadaDesdeMacroCurriculums As Boolean
+
+    ' --- Datos y diccionarios ---
+    Dim datos As Variant
+    Dim datosInactivos As Variant
+    Dim celdaUltima As Range
+    Dim ultimaFilaDatos As Long
+    Dim ultimaFilaAux As Long
+    Dim ultimaFilaLimpieza As Long
+    Dim i As Long
+    Dim reportRow As Long
+    Dim cursosFOD As Object
+    Dim cursosIniciales As Object
+    Dim usuariosInactivos As Object
+    Dim personas As Object
+    Dim personaData As Object
+    Dim personaKey As Variant
+
+    ' --- Proceso de filas ---
+    Dim personID As String
+    Dim nombreCurso As String
+    Dim estado As String
+    Dim fechaCurso As Variant
+    Dim esInicial As Boolean
+    Dim esFOD As Boolean
+
+    ' --- Informe ---
+    Dim hoy As Date
+    Dim iniEstado As String
+    Dim iniFecha As Variant
+    Dim recEstado As String
+    Dim recMostrar As String
+    Dim recFecha As Variant
+
+    ' --- Rutas y exportación ---
+    Dim rutaFicheroFuente As String
+    Dim nombreFicheroFuente As String
+    Dim rutaInformes As String
+    Dim nombreInforme As String
+    Dim rutaFinal As String
+    Dim numeroArchivoConMismoNombre As Long
+
+    ' --- Control de ejecución ---
+    Dim etapa As String
+    Dim filaActual As Long
+    Dim hayError As Boolean
+    Dim errNum As Long
+    Dim errDesc As String
+    Dim mensajeFinal As String
+    Dim cerrarEsteLibro As Boolean
+    Dim calcPrevio As XlCalculation
+
+    If Len(ThisWorkbook.Path) = 0 Then
+        MsgBox "Guarda primero el libro de la macro: no tiene ruta y no se puede crear la carpeta 'Informes'.", vbExclamation
+        Exit Sub
+    End If
+
+    ' Desactivar actualizaciones para mejorar el rendimiento (se restauran siempre en Limpieza)
+    calcPrevio = Application.Calculation
+    Application.ScreenUpdating = False
+    Application.Calculation = xlCalculationManual
+    Application.EnableEvents = False
+
+    On Error GoTo ManejadorError
+
+    hoy = Date
+
+    '-----------------------------------------------------------------------------------
+    etapa = "Comprobando hojas del libro de la macro"
+    '-----------------------------------------------------------------------------------
+    If Not ExisteHoja(ThisWorkbook, HOJA_CONFIG) Then
+        MsgBox "No existe la hoja '" & HOJA_CONFIG & "' en el libro de la macro.", vbCritical
+        GoTo Limpieza
+    End If
+    If Not ExisteHoja(ThisWorkbook, HOJA_INFORME) Then
+        MsgBox "No existe la hoja '" & HOJA_INFORME & "' en el libro de la macro.", vbCritical
+        GoTo Limpieza
+    End If
+    If Not ExisteHoja(ThisWorkbook, HOJA_RESUMEN) Then
+        MsgBox "No existe la hoja '" & HOJA_RESUMEN & "' en el libro de la macro.", vbCritical
+        GoTo Limpieza
+    End If
+
+    '-----------------------------------------------------------------------------------
+    etapa = "Cargando la librería de módulos"
+    '-----------------------------------------------------------------------------------
+    Set libreriaModulos = ObtenerLibroAbierto(NOMBRE_LIBRERIA)
+    If libreriaModulos Is Nothing Then
+        On Error Resume Next
+        Set libreriaModulos = Workbooks.Open(RUTA_LIBRERIA, UpdateLinks:=0, ReadOnly:=True)
+        On Error GoTo ManejadorError
+        If libreriaModulos Is Nothing Then
+            MsgBox "No se pudo abrir la librería de módulos:" & vbCrLf & RUTA_LIBRERIA, vbCritical
+            GoTo Limpieza
+        End If
+        abrioLibreria = True
+    End If
+
+    '-----------------------------------------------------------------------------------
+    etapa = "Abriendo el archivo 'My Team All Learning'"
+    '-----------------------------------------------------------------------------------
+    If Len(rutaCarpetaWbFicheroFuenteFOD) = 0 Then
+        rutaCarpetaWbFicheroFuenteFOD = RUTA_FUENTE_DEFECTO
+        isMacroEjecutadaDesdeMacroCurriculums = False
+    Else
+        isMacroEjecutadaDesdeMacroCurriculums = True
+    End If
+    If Right$(rutaCarpetaWbFicheroFuenteFOD, 1) <> "\" Then
+        rutaCarpetaWbFicheroFuenteFOD = rutaCarpetaWbFicheroFuenteFOD & "\"
+    End If
+
+    rutaFicheroFuente = CStr(Application.Run("'" & libreriaModulos.Name & "'!GetMostRecentAbsolutePathFileInAFolder", _
+        PREFIJO_FICHERO_FUENTE, _
+        rutaCarpetaWbFicheroFuenteFOD))
+
+    If Len(rutaFicheroFuente) = 0 Then
+        MsgBox "No se encontró el archivo 'My Team All Learning'.", vbCritical
+        GoTo Limpieza
+    End If
+
+    nombreFicheroFuente = CStr(Application.Run("'" & libreriaModulos.Name & "'!GetFullFileNameFromFullPath", rutaFicheroFuente))
+    Application.Run "'" & libreriaModulos.Name & "'!CloseExcelWorkbook", nombreFicheroFuente
+
+    On Error Resume Next
+    Set wbData = Application.Run("'" & libreriaModulos.Name & "'!OpenExcelWorkbook", rutaFicheroFuente)
+    On Error GoTo ManejadorError
+    If wbData Is Nothing Then
+        MsgBox "No se pudo abrir el archivo:" & vbCrLf & rutaFicheroFuente, vbCritical
+        GoTo Limpieza
+    End If
+
+    If Not ExisteHoja(wbData, HOJA_DATOS) Then
+        MsgBox "El archivo origen no contiene la hoja '" & HOJA_DATOS & "'.", vbCritical
+        GoTo Limpieza
+    End If
+    Set wsData = wbData.Sheets(HOJA_DATOS)
+    If wsData.AutoFilterMode Then wsData.AutoFilterMode = False
+
+    '-----------------------------------------------------------------------------------
+    etapa = "Cargando los cursos FOD iniciales de la hoja Configuración"
+    '-----------------------------------------------------------------------------------
+    Set cursosIniciales = CrearDiccionarioTexto()
+    Set wsConfig = ThisWorkbook.Sheets(HOJA_CONFIG)
+
+    ultimaFilaAux = wsConfig.Cells(wsConfig.Rows.Count, "A").End(xlUp).Row
+    For i = 2 To ultimaFilaAux
+        nombreCurso = TextoSeguro(wsConfig.Cells(i, "A").Value)
+        If Len(nombreCurso) > 0 Then cursosIniciales(nombreCurso) = True
+    Next i
+
+    If cursosIniciales.Count = 0 Then
+        MsgBox "La hoja '" & HOJA_CONFIG & "' no tiene cursos FOD iniciales en la columna A (desde la fila 2).", vbExclamation
+        GoTo Limpieza
+    End If
+
+    '-----------------------------------------------------------------------------------
+    etapa = "Leyendo los datos de My Team All Learning"
+    '-----------------------------------------------------------------------------------
+    Set celdaUltima = wsData.Cells.Find(What:="*", LookIn:=xlFormulas, _
+                                        SearchOrder:=xlByRows, SearchDirection:=xlPrevious)
+    If celdaUltima Is Nothing Then
+        ultimaFilaDatos = 0
+    Else
+        ultimaFilaDatos = celdaUltima.Row
+    End If
+
+    If ultimaFilaDatos < 2 Then
+        MsgBox "La hoja '" & HOJA_DATOS & "' no contiene datos.", vbInformation
+        GoTo Limpieza
+    End If
+
+    datos = wsData.Range(wsData.Cells(1, 1), wsData.Cells(ultimaFilaDatos, ULTIMA_COL_DATOS)).Value
+
+    '-----------------------------------------------------------------------------------
+    etapa = "Extrayendo los nombres de cursos FOD actualizados"
+    '-----------------------------------------------------------------------------------
+    Set cursosFOD = CrearDiccionarioTexto()
+    For i = 2 To ultimaFilaDatos
+        nombreCurso = TextoSeguro(datos(i, C_CURSO))
+        If Len(nombreCurso) > 0 Then
+            If InStr(1, nombreCurso, TEXTO_FILTRO_FOD, vbTextCompare) > 0 Then cursosFOD(nombreCurso) = True
+        End If
+    Next i
+
+    '-----------------------------------------------------------------------------------
+    etapa = "Cargando usuarios inactivos de Macro Curriculums"
+    '-----------------------------------------------------------------------------------
+    Set usuariosInactivos = CrearDiccionarioTexto()
+
+    Set wbMacroCurriculum = ObtenerLibroAbierto(NOMBRE_LIBRO_CURRICULUMS)
+    If wbMacroCurriculum Is Nothing Then
+        On Error Resume Next
+        Set wbMacroCurriculum = Workbooks.Open(RUTA_MACRO_CURRICULUMS, UpdateLinks:=0, ReadOnly:=True)
+        On Error GoTo ManejadorError
+        If wbMacroCurriculum Is Nothing Then
+            MsgBox "No se pudo abrir Macro Curriculums:" & vbCrLf & RUTA_MACRO_CURRICULUMS, vbCritical
+            GoTo Limpieza
+        End If
+        abrioMacroCurriculum = True
+    End If
+
+    If Not ExisteHoja(wbMacroCurriculum, HOJA_INACTIVOS) Then
+        MsgBox "Macro Curriculums no contiene la hoja '" & HOJA_INACTIVOS & "'.", vbCritical
+        GoTo Limpieza
+    End If
+    Set wsInactivos = wbMacroCurriculum.Sheets(HOJA_INACTIVOS)
+
+    ultimaFilaAux = wsInactivos.Cells(wsInactivos.Rows.Count, "C").End(xlUp).Row
+    If ultimaFilaAux >= 2 Then
+        datosInactivos = wsInactivos.Range("C2:D" & ultimaFilaAux).Value
+        For i = 1 To UBound(datosInactivos, 1)
+            personID = TextoSeguro(datosInactivos(i, 1))
+            If Len(personID) > 0 Then
+                If Not usuariosInactivos.Exists(personID) Then
+                    usuariosInactivos.Add personID, TextoSeguro(datosInactivos(i, 2))
+                End If
+            End If
+        Next i
+    End If
+
+    '-----------------------------------------------------------------------------------
+    etapa = "Procesando los registros de My Team All Learning"
+    '-----------------------------------------------------------------------------------
+    Set personas = CreateObject("Scripting.Dictionary")
+
+    For i = 2 To ultimaFilaDatos
+        filaActual = i
+
+        ' Solo registros del siglum configurado
+        If InStr(1, TextoSeguro(datos(i, C_SIGLUM)), FILTRO_SIGLUM, vbTextCompare) = 0 Then GoTo SiguienteFila
+
+        personID = TextoSeguro(datos(i, C_ID))
+        If Len(personID) = 0 Then GoTo SiguienteFila
+
+        ' Usuarios marcados como invisibles (SI) se excluyen
+        If usuariosInactivos.Exists(personID) Then
+            If EsSi(usuariosInactivos(personID)) Then GoTo SiguienteFila
+        End If
+
+        ' Solo estados válidos
+        estado = EstadoCanonico(datos(i, C_ESTADO))
+        If Len(estado) = 0 Then GoTo SiguienteFila
+
+        If Not personas.Exists(personID) Then
+            Set personaData = CreateObject("Scripting.Dictionary")
+            personaData("Nombre") = TextoSeguro(datos(i, C_NOMBRE))
+            personaData("Apellidos") = TextoSeguro(datos(i, C_APELLIDOS))
+            personaData("ID") = personID
+            personaData("Manager") = TextoSeguro(datos(i, C_MANAGER))
+            personaData("Siglum") = ""
+            personaData("InitialFODStatus") = ""
+            personaData("InitialFODFecha") = Empty
+            personaData("CursoRecienteNombre") = ""
+            personaData("CursoRecienteEstado") = ""
+            personaData("CursoRecienteFecha") = Empty
+            personas.Add personID, personaData
+        Else
+            Set personaData = personas(personID)
+        End If
+
+        If Len(CStr(personaData("Siglum"))) = 0 Then
+            personaData("Siglum") = ExtraerSiglum(datos(i, C_SIGLUM))
+        End If
+
+        nombreCurso = TextoSeguro(datos(i, C_CURSO))
+        fechaCurso = FechaDelCurso(datos(i, C_FECHA_FIN), datos(i, C_FECHA_REGISTRO), datos(i, C_FECHA_OTRA))
+
+        esInicial = EstaEnConjunto(nombreCurso, cursosIniciales)
+        esFOD = esInicial Or EstaEnConjunto(nombreCurso, cursosFOD)
+
+        ' Curso FOD inicial: solo cuenta si está "Completed"
+        If esInicial And estado = "Completed" Then
+            If DebeReemplazar(estado, fechaCurso, CStr(personaData("InitialFODStatus")), personaData("InitialFODFecha")) Then
+                personaData("InitialFODStatus") = estado
+                personaData("InitialFODFecha") = fechaCurso
+            End If
+        End If
+
+        ' Curso FOD más reciente (cualquier curso FOD o FOD inicial)
+        If esFOD Then
+            If DebeReemplazar(estado, fechaCurso, CStr(personaData("CursoRecienteEstado")), personaData("CursoRecienteFecha")) Then
+                personaData("CursoRecienteNombre") = nombreCurso
+                personaData("CursoRecienteEstado") = estado
+                personaData("CursoRecienteFecha") = fechaCurso
+            End If
+        End If
+
+SiguienteFila:
+    Next i
+    filaActual = 0
+
+    If personas.Count = 0 Then
+        MsgBox "No hay datos con estado 'Registered', 'Completed', 'Exempt' o 'Completed (Equivalent)' para generar el informe.", vbInformation
+        GoTo Limpieza
+    End If
+
+    '-----------------------------------------------------------------------------------
+    etapa = "Rellenando la hoja '" & HOJA_INFORME & "'"
+    '-----------------------------------------------------------------------------------
+    Set wsReport = ThisWorkbook.Sheets(HOJA_INFORME)
+
+    ultimaFilaLimpieza = wsReport.UsedRange.Row + wsReport.UsedRange.Rows.Count - 1
+    If ultimaFilaLimpieza < FILA_INICIO_INFORME Then ultimaFilaLimpieza = FILA_INICIO_INFORME
+
+    With wsReport.Range("A" & FILA_INICIO_INFORME & ":Z" & ultimaFilaLimpieza)
+        .ClearContents
+        .Interior.Pattern = xlNone
+        .Font.Color = RGB(0, 0, 0)
+    End With
+
+    reportRow = FILA_INICIO_INFORME
+
+    For Each personaKey In personas.Keys
+        Set personaData = personas(personaKey)
+        personID = CStr(personaData("ID"))
+
+        ' ---------------------- Cálculo de estados ----------------------
+        iniEstado = CStr(personaData("InitialFODStatus"))
+        iniFecha = personaData("InitialFODFecha")
+        If iniEstado = "Completed" And IsDate(iniFecha) Then
+            If EstaCaducado(iniFecha, hoy) Then iniEstado = ESTADO_CADUCADO
+        End If
+
+        recEstado = CStr(personaData("CursoRecienteEstado"))
+        recFecha = personaData("CursoRecienteFecha")
+        If IsDate(recFecha) Then
+            If recEstado = "Completed" Or (CADUCA_EQUIVALENT And recEstado = "Completed (Equivalent)") Then
+                If EstaCaducado(recFecha, hoy) Then recEstado = ESTADO_CADUCADO
+            End If
+        End If
+
+        ' Reglas cruzadas: un curso reciente válido sustituye al Initial FOD caducado
+        ' (y, si el reciente es Exempt, también al Initial FOD pendiente).
+        Select Case recEstado
+            Case "Completed", "Completed (Equivalent)", "Exempt"
+                If iniEstado = ESTADO_CADUCADO Then iniEstado = "Completed"
+                If recEstado = "Exempt" And Len(iniEstado) = 0 Then iniEstado = "Completed"
+        End Select
+
+        If Len(iniEstado) = 0 Then iniEstado = ESTADO_PENDIENTE
+        If Len(recEstado) = 0 Then recEstado = ESTADO_PENDIENTE
+
+        If recEstado = "Completed (Equivalent)" Then
+            recMostrar = "Completed"
+        Else
+            recMostrar = recEstado
+        End If
+
+        ' ---------------------- Escritura en la hoja ----------------------
+        With wsReport
+            .Cells(reportRow, 1).Value = personaData("Apellidos")
+            .Cells(reportRow, 2).Value = personaData("Nombre")
+            .Cells(reportRow, 3).Value = personID
+
+            If usuariosInactivos.Exists(personID) Then
+                If UCase$(TextoSeguro(usuariosInactivos(personID))) = "NO" Then
+                    .Cells(reportRow, 1).Font.Color = RGB(255, 0, 0)
+                    .Cells(reportRow, 2).Font.Color = RGB(255, 0, 0)
+                End If
+            End If
+
+            .Cells(reportRow, 4).Value = personaData("Siglum")
+            .Cells(reportRow, 5).Value = personaData("Manager")
+
+            ' Initial FOD
+            .Cells(reportRow, COL_OFFSET).Value = iniEstado
+            .Cells(reportRow, COL_OFFSET).Font.Color = ColorEstado(iniEstado)
+            If IsDate(iniFecha) Then
+                .Cells(reportRow, COL_OFFSET + 1).NumberFormat = "dd/mm/yyyy"
+                .Cells(reportRow, COL_OFFSET + 1).Value = CDate(iniFecha)
+            End If
+            If iniEstado = ESTADO_CADUCADO Then
+                .Cells(reportRow, COL_OFFSET + 1).Font.Color = RGB(0, 0, 0)
+                .Cells(reportRow, COL_OFFSET + 1).Interior.Color = RGB(255, 0, 0)
+            End If
+
+            ' Curso FOD más reciente
+            .Cells(reportRow, COL_OFFSET + 2).Value = recMostrar
+            .Cells(reportRow, COL_OFFSET + 2).Font.Color = ColorEstado(recEstado)
+            If IsDate(recFecha) Then
+                .Cells(reportRow, COL_OFFSET + 3).NumberFormat = "dd/mm/yyyy"
+                .Cells(reportRow, COL_OFFSET + 3).Value = CDate(recFecha)
+            End If
+            If recEstado = ESTADO_CADUCADO Then
+                .Cells(reportRow, COL_OFFSET + 3).Font.Color = RGB(0, 0, 0)
+                .Cells(reportRow, COL_OFFSET + 3).Interior.Color = RGB(255, 0, 0)
+            End If
+            .Cells(reportRow, COL_OFFSET + 4).Value = personaData("CursoRecienteNombre")
+        End With
+
+        reportRow = reportRow + 1
+    Next personaKey
+
+    '-----------------------------------------------------------------------------------
+    etapa = "Exportando el informe a un libro nuevo"
+    '-----------------------------------------------------------------------------------
+    Application.Calculate
+
+    ' Se copian las dos hojas a la vez para que las fórmulas de "Resumen FOD" apunten
+    ' a la copia de "Informe FOD" y no al libro de la macro (evita vínculos externos).
+    ThisWorkbook.Sheets(Array(HOJA_RESUMEN, HOJA_INFORME)).Copy
+    Set informeWB = ActiveWorkbook
+
+    If informeWB.Sheets(1).Name <> HOJA_RESUMEN Then
+        informeWB.Sheets(HOJA_RESUMEN).Move Before:=informeWB.Sheets(1)
+    End If
+    Application.Calculate
+
+    '-----------------------------------------------------------------------------------
+    etapa = "Guardando el informe (evitando duplicar nombres del mismo día)"
+    '-----------------------------------------------------------------------------------
+    rutaInformes = ThisWorkbook.Path & "\Informes\"
+    If Len(Dir(rutaInformes, vbDirectory)) = 0 Then MkDir rutaInformes
+
+    nombreInforme = "TAOA FOD " & Format$(Date, "yyyy-mm-dd")
+    rutaFinal = rutaInformes & nombreInforme & ".xlsx"
+
+    numeroArchivoConMismoNombre = 0
+    Do While Len(Dir(rutaFinal)) > 0
+        numeroArchivoConMismoNombre = numeroArchivoConMismoNombre + 1
+        rutaFinal = rutaInformes & nombreInforme & " (" & numeroArchivoConMismoNombre & ").xlsx"
+    Loop
+
+    Application.DisplayAlerts = False
+    informeWB.SaveAs Filename:=rutaFinal, FileFormat:=xlOpenXMLWorkbook
+    Application.DisplayAlerts = True
+
+    If isMacroEjecutadaDesdeMacroCurriculums Then
+        informeWB.Close SaveChanges:=False
+        Set informeWB = Nothing
+        cerrarEsteLibro = True
+    Else
+        mensajeFinal = "Ejecución finalizada e informe guardado en: " & rutaFinal
+    End If
+
+'===================================================================================
+' LIMPIEZA (se ejecuta SIEMPRE: con éxito, con aviso o con error)
+'===================================================================================
+Limpieza:
+    On Error Resume Next
+
+    Application.DisplayAlerts = True
+
+    If hayError And Not informeWB Is Nothing Then informeWB.Close SaveChanges:=False
+    If Not wbData Is Nothing Then wbData.Close SaveChanges:=False
+    If abrioLibreria And Not libreriaModulos Is Nothing Then libreriaModulos.Close SaveChanges:=False
+    If abrioMacroCurriculum And Not wbMacroCurriculum Is Nothing Then wbMacroCurriculum.Close SaveChanges:=False
+
+    If Not hayError And Not informeWB Is Nothing Then informeWB.Activate
+
+    ' Restaurar la configuración de Excel ANTES de cerrar este libro
+    Application.ScreenUpdating = True
+    Application.EnableEvents = True
+    Application.Calculation = calcPrevio
+
+    If hayError Then
+        MsgBox "Se produjo un error durante: " & etapa & vbCrLf & _
+               IIf(filaActual > 0, "Fila de datos: " & filaActual & vbCrLf, "") & _
+               "Error " & errNum & ": " & errDesc, vbCritical
+    ElseIf Len(mensajeFinal) > 0 Then
+        MsgBox mensajeFinal, vbInformation
+    End If
+
+    ' Último paso: cerrar este libro (nada puede ejecutarse después)
+    If cerrarEsteLibro And Not hayError Then ThisWorkbook.Close SaveChanges:=GUARDAR_LIBRO_MACRO_AL_CERRAR
+    Exit Sub
+
+ManejadorError:
+    hayError = True
+    errNum = Err.Number
+    errDesc = Err.description
+    Resume Limpieza
+
+End Sub
+
