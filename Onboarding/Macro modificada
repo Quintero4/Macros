@@ -796,6 +796,10 @@ Function FormulaConteoSiglum(ByVal sigRng As String, ByVal estRng As String, ByV
     
     If estado = "" Then
         FormulaConteoSiglum = "COUNTIF(" & sigRng & ",""" & criterioSiglum & """)"
+    ElseIf estado = "Pending" Then
+        'PENDING cuenta los pendientes y también los cursos completados pero caducados (hay que repetirlos)
+        FormulaConteoSiglum = "COUNTIFS(" & sigRng & ",""" & criterioSiglum & """," & estRng & ",""Pending"")" & _
+                              "+COUNTIFS(" & sigRng & ",""" & criterioSiglum & """," & estRng & ",""Completed (Caducado)"")"
     Else
         FormulaConteoSiglum = "COUNTIFS(" & sigRng & ",""" & criterioSiglum & """," & estRng & ",""" & estado & """)"
     End If
