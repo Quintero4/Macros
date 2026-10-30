@@ -610,21 +610,41 @@ SiguientePersona:
 End Sub
 Sub GenerarTablaResumenEnglish(ByRef wsResumen As Worksheet, ByVal nombreHojaSpanish As String, ByVal nombreHojaEnglish As String)
     'Duplica en la hoja Resumen la tabla de la version Spanish (titulo, cabeceras, POPULATION, COMPLETED, PENDING y TOTAL)
-    'debajo de la original, cambiando el titulo y apuntando sus fórmulas a la hoja de la version English
+    'debajo de la original, cambiando el titulo y calculando sus datos con fórmulas propias que apuntan a la hoja English
     Dim celdaTitulo As Range
     Dim rngBusqueda As Range
     Dim celdaAux As Range
     Dim filaTitulo As Long
+    Dim filaHeader As Long
     Dim filaPopulation As Long
+    Dim filaCompleted As Long
+    Dim filaPending As Long
     Dim filaTotal As Long
     Dim filaDestino As Long
     Dim offsetFilas As Long
     Dim primeraCol As Long
     Dim ultimaCol As Long
+    Dim colTotal As Long
+    Dim colTAOA As Long
     Dim filaIdx As Long
     Dim colIdx As Long
+    Dim k As Integer
+    Dim h As String
+    Dim letraEstado As String
+    Dim sigRngEN As String
+    Dim estRngEN As String
+    Dim sigRngES As String
+    Dim estRngES As String
+    Dim listaOtros As String
+    Dim filaTabla As Long
+    Dim estadoBuscado As String
+    Dim valorComprobacion As Variant
+    Dim numDiferencias As Long
+    Dim detalleDiferencia As String
     Dim textoTitulo As String
     Dim textoNuevoTitulo As String
+    Dim celdaPop As String
+    Dim celdaComp As String
     
     'Localizar la tabla de la version Spanish por su título
     Set celdaTitulo = wsResumen.Cells.Find(What:="Onboarding Aviation Safety", LookIn:=xlValues, LookAt:=xlPart, SearchOrder:=xlByRows, MatchCase:=False)
@@ -636,35 +656,52 @@ Sub GenerarTablaResumenEnglish(ByRef wsResumen As Worksheet, ByVal nombreHojaSpa
     filaTitulo = celdaTitulo.Row
     primeraCol = celdaTitulo.MergeArea.Column
     
-    'Localizar las filas POPULATION y TOTAL de esa tabla (columna de etiquetas)
+    'Localizar las filas de la tabla (columna de etiquetas)
     Set rngBusqueda = wsResumen.Range(wsResumen.Cells(filaTitulo, primeraCol), wsResumen.Cells(filaTitulo + 15, primeraCol))
     
     Set celdaAux = rngBusqueda.Find(What:="POPULATION", LookIn:=xlValues, LookAt:=xlWhole, MatchCase:=False)
-    If celdaAux Is Nothing Then
-        MsgBox "No se ha encontrado la fila POPULATION bajo el título de la tabla. No se ha generado la tabla English.", vbExclamation
-        Exit Sub
-    End If
+    If celdaAux Is Nothing Then MsgBox "No se ha encontrado la fila POPULATION. No se ha generado la tabla English.", vbExclamation: Exit Sub
     filaPopulation = celdaAux.Row
     
+    Set celdaAux = rngBusqueda.Find(What:="COMPLETED", LookIn:=xlValues, LookAt:=xlWhole, MatchCase:=False)
+    If celdaAux Is Nothing Then MsgBox "No se ha encontrado la fila COMPLETED. No se ha generado la tabla English.", vbExclamation: Exit Sub
+    filaCompleted = celdaAux.Row
+    
+    Set celdaAux = rngBusqueda.Find(What:="PENDING", LookIn:=xlValues, LookAt:=xlWhole, MatchCase:=False)
+    If celdaAux Is Nothing Then MsgBox "No se ha encontrado la fila PENDING. No se ha generado la tabla English.", vbExclamation: Exit Sub
+    filaPending = celdaAux.Row
+    
     Set celdaAux = rngBusqueda.Find(What:="TOTAL", LookIn:=xlValues, LookAt:=xlWhole, MatchCase:=False)
-    If celdaAux Is Nothing Then
-        MsgBox "No se ha encontrado la fila TOTAL bajo el título de la tabla. No se ha generado la tabla English.", vbExclamation
-        Exit Sub
-    End If
+    If celdaAux Is Nothing Then MsgBox "No se ha encontrado la fila TOTAL. No se ha generado la tabla English.", vbExclamation: Exit Sub
     filaTotal = celdaAux.Row
+    
+    filaHeader = filaPopulation - 1
     
     'Última columna de la tabla (el título está combinado a lo ancho de la tabla; si no, se mira la fila de cabeceras)
     If celdaTitulo.MergeCells Then
         ultimaCol = primeraCol + celdaTitulo.MergeArea.Columns.Count - 1
     Else
-        ultimaCol = wsResumen.Cells(filaPopulation - 1, wsResumen.Columns.Count).End(xlToLeft).Column
+        ultimaCol = wsResumen.Cells(filaHeader, wsResumen.Columns.Count).End(xlToLeft).Column
     End If
     
-    'Si la tabla original no tiene fórmulas no se puede replicar de forma fiable, así que no se genera
-    If Not wsResumen.Cells(filaPopulation, primeraCol + 1).HasFormula Then
-        MsgBox "La tabla del Resumen no contiene fórmulas, no se puede replicar para la version English.", vbExclamation
+    'Localizar las columnas TAOA(X) (total) y TAOA (resto) por su cabecera
+    For colIdx = primeraCol + 1 To ultimaCol
+        h = Trim(CStr(wsResumen.Cells(filaHeader, colIdx).Value))
+        If h = "TAOA(X)" Then colTotal = colIdx
+        If h = "TAOA" Then colTAOA = colIdx
+    Next colIdx
+    If colTotal = 0 Then
+        MsgBox "No se ha encontrado la columna TAOA(X) en las cabeceras de la tabla. No se ha generado la tabla English.", vbExclamation
         Exit Sub
     End If
+    
+    'Rangos de las hojas de datos: el siglum está en la columna D y el estado del curso en la columna con la cabecera OnBoarding
+    letraEstado = LetraColumna(getNumeroColumnaPorValorCeldaYNumeroFila(wsResumen.Parent.Sheets(nombreHojaEnglish), "OnBoarding*", 1))
+    sigRngEN = "'" & nombreHojaEnglish & "'!$D$3:$D$1000"
+    estRngEN = "'" & nombreHojaEnglish & "'!$" & letraEstado & "$3:$" & letraEstado & "$1000"
+    letraEstado = LetraColumna(getNumeroColumnaPorValorCeldaYNumeroFila(wsResumen.Parent.Sheets(nombreHojaSpanish), "OnBoarding*", 1))
+    sigRngES = "'" & nombreHojaSpanish & "'!$D$3:$D$1000"
+    estRngES = "'" & nombreHojaSpanish & "'!$" & letraEstado & "$3:$" & letraEstado & "$1000"
     
     'Destino: 2 filas en blanco debajo de la tabla original (o debajo de todo lo que haya si esa zona no está vacía)
     filaDestino = filaTotal + 3
@@ -682,22 +719,90 @@ Sub GenerarTablaResumenEnglish(ByRef wsResumen As Worksheet, ByVal nombreHojaSpa
         wsResumen.Rows(filaIdx + offsetFilas).RowHeight = wsResumen.Rows(filaIdx).RowHeight
     Next filaIdx
     
-    'Apuntar las fórmulas de la tabla nueva a la hoja de la version English (las referencias internas de la tabla se mantienen relativas a la tabla nueva)
-    For filaIdx = filaPopulation To filaTotal
-        For colIdx = primeraCol + 1 To ultimaCol
-            If wsResumen.Cells(filaIdx, colIdx).HasFormula Then
-                wsResumen.Cells(filaIdx + offsetFilas, colIdx).FormulaR1C1 = _
-                    Replace(wsResumen.Cells(filaIdx, colIdx).FormulaR1C1, nombreHojaSpanish & "!", "'" & nombreHojaEnglish & "'!")
-            End If
-        Next colIdx
-    Next filaIdx
+    'Sustituir los datos copiados por fórmulas que leen de la hoja English (POPULATION, COMPLETED y PENDING)
+    For colIdx = primeraCol + 1 To ultimaCol
+        If colIdx <> colTAOA Then
+            h = Trim(CStr(wsResumen.Cells(filaHeader, colIdx).Value))
+            wsResumen.Cells(filaPopulation + offsetFilas, colIdx).Formula = "=" & FormulaConteoSiglum(sigRngEN, estRngEN, h, "")
+            wsResumen.Cells(filaCompleted + offsetFilas, colIdx).Formula = "=" & FormulaConteoSiglum(sigRngEN, estRngEN, h, "Completed")
+            wsResumen.Cells(filaPending + offsetFilas, colIdx).Formula = "=" & FormulaConteoSiglum(sigRngEN, estRngEN, h, "Pending")
+        End If
+    Next colIdx
+    
+    'Columna TAOA = total menos el resto de columnas
+    If colTAOA > 0 Then
+        For k = 0 To 2
+            filaTabla = Choose(k + 1, filaPopulation, filaCompleted, filaPending) + offsetFilas
+            listaOtros = "0"
+            For colIdx = primeraCol + 1 To ultimaCol
+                If colIdx <> colTotal And colIdx <> colTAOA Then
+                    listaOtros = listaOtros & "+" & wsResumen.Cells(filaTabla, colIdx).Address(False, False)
+                End If
+            Next colIdx
+            wsResumen.Cells(filaTabla, colTAOA).Formula = "=" & wsResumen.Cells(filaTabla, colTotal).Address(False, False) & "-(" & listaOtros & ")"
+        Next k
+    End If
+    
+    'Fila TOTAL: porcentaje de completados sobre la población
+    For colIdx = primeraCol + 1 To ultimaCol
+        celdaPop = wsResumen.Cells(filaPopulation + offsetFilas, colIdx).Address(False, False)
+        celdaComp = wsResumen.Cells(filaCompleted + offsetFilas, colIdx).Address(False, False)
+        wsResumen.Cells(filaTotal + offsetFilas, colIdx).Formula = "=IF(" & celdaPop & "=0,0," & celdaComp & "/" & celdaPop & ")"
+    Next colIdx
     
     'Cambiar el título de la tabla nueva
     textoTitulo = CStr(celdaTitulo.Value)
     textoNuevoTitulo = Replace(textoTitulo, "espa" & ChrW(241) & "ol", "ingl" & ChrW(233) & "s", , , vbTextCompare)
     If textoNuevoTitulo = textoTitulo Then textoNuevoTitulo = textoTitulo & " (English version)"
     wsResumen.Cells(filaTitulo + offsetFilas, primeraCol).Value = textoNuevoTitulo
+    
+    'COMPROBACIÓN: aplicando estas mismas fórmulas a la hoja Spanish deben salir los mismos números que ya tiene la tabla Spanish
+    Application.Calculate
+    numDiferencias = 0
+    For colIdx = primeraCol + 1 To ultimaCol
+        If colIdx <> colTAOA Then
+            h = Trim(CStr(wsResumen.Cells(filaHeader, colIdx).Value))
+            For k = 0 To 2
+                filaTabla = Choose(k + 1, filaPopulation, filaCompleted, filaPending)
+                estadoBuscado = Choose(k + 1, "", "Completed", "Pending")
+                valorComprobacion = wsResumen.Evaluate(FormulaConteoSiglum(sigRngES, estRngES, h, estadoBuscado))
+                If IsError(valorComprobacion) Then
+                    numDiferencias = numDiferencias + 1
+                ElseIf CStr(valorComprobacion) <> CStr(wsResumen.Cells(filaTabla, colIdx).Value) Then
+                    numDiferencias = numDiferencias + 1
+                    If detalleDiferencia = "" Then
+                        detalleDiferencia = wsResumen.Cells(filaTabla, primeraCol).Value & " / " & h & ": tabla Spanish = " & wsResumen.Cells(filaTabla, colIdx).Value & ", mi cálculo = " & valorComprobacion
+                    End If
+                End If
+            Next k
+        End If
+    Next colIdx
+    
+    If numDiferencias > 0 Then
+        MsgBox "La tabla English se ha generado, pero aplicando mis fórmulas a la hoja Spanish no coincide con la tabla Spanish original en " & numDiferencias & " celda(s)." & vbCrLf & _
+               "Primera diferencia: " & detalleDiferencia & vbCrLf & vbCrLf & _
+               "Revisa los números de la tabla English.", vbExclamation
+    End If
 End Sub
+Function FormulaConteoSiglum(ByVal sigRng As String, ByVal estRng As String, ByVal cabecera As String, ByVal estado As String) As String
+    'Devuelve el texto de la fórmula (sin el signo =) que cuenta personas por siglum (y por estado si se indica)
+    Dim criterioSiglum As String
+    
+    If cabecera = "TAOA(X)" Then
+        criterioSiglum = "?*" 'Cualquier siglum no vacío
+    Else
+        criterioSiglum = cabecera & "*"
+    End If
+    
+    If estado = "" Then
+        FormulaConteoSiglum = "COUNTIF(" & sigRng & ",""" & criterioSiglum & """)"
+    Else
+        FormulaConteoSiglum = "COUNTIFS(" & sigRng & ",""" & criterioSiglum & """," & estRng & ",""" & estado & """)"
+    End If
+End Function
+Function LetraColumna(ByVal numeroColumna As Long) As String
+    LetraColumna = Split(Cells(1, numeroColumna).Address(True, False), "$")(0)
+End Function
 Function getNumeroColumnaPorValorCeldaYNumeroFila(ByRef ws As Worksheet, ByVal valor As String, ByVal numeroFila As Integer)
     Dim filaCabeceras As Range
     Dim celdaEncontrada As Range
