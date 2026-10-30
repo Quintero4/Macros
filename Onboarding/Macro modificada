@@ -431,8 +431,7 @@ NextIteration:
     For Each personaKey In personas.Keys
         Set personaData = personas(personaKey)
         
-        'Solo se incluye en cada tabla a quien tiene registro del curso en esa version
-        If personaData("courseStatus" & sufijoVersion) = "" Then GoTo SiguientePersona
+        'Todas las personas salen en las dos tablas; quien no tiene registro del curso en esa version sale como Pending (igual que en la macro original)
         
         With wsDestino
         
@@ -526,7 +525,6 @@ NextIteration:
             
         End With
         reportRow = reportRow + 1
-SiguientePersona:
     Next personaKey
     
     Next versionIdx
