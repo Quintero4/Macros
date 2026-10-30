@@ -1,0 +1,681 @@
+Sub Main()
+    Call GenerarInformeCursoAviationSafety
+End Sub
+Sub GenerarInformeCursoAviationSafety(Optional ByVal rutaCarpetaWbMyTeamAllLearning As String)
+    ' Declaración de variables
+    Dim libreriaModulos As Workbook
+    Dim wbOrigenDataMyTeamAllLearning As Workbook
+    Dim wsOrigenDataMyTeamAllLearning As Worksheet
+    Dim wsReport As Worksheet
+    Dim lastRow As Long
+    Dim reportRow As Long
+    Dim numeroFila As Long
+    Dim courseList As Variant
+    Dim curso As Variant
+    Dim clFodInitialTrainingLower() As String
+    Dim courseName As String
+    Dim Status As String
+    Dim courseEndDate As Variant
+    Dim courseStartingDate As Variant
+    Dim courseCompletedDate As Variant ' Variable para la fecha en la columna H
+    Dim cursoFecha As Variant
+    Dim currentDate As Date
+    Dim personID As String
+    Dim personName As String
+    Dim colOffset As Integer
+    Dim headerRow As Integer
+    Dim rng As Range
+    Dim personas As Object
+    Dim personaKey As Variant
+    Dim personaData As Object
+    Dim totalRegistros As Long
+    Dim registrosConID As Long
+    Dim registrosConEstadoValido As Long
+    Dim registrosIncluidos As Long
+    Dim myTeamAllLearningFileFullPath As String
+    Dim myTeamAllLearningFileFullName As String
+    Dim variableWithoutValueOnlyForUseApplicationFunctions As Variant
+    Dim valorColumnaConSiglum As String ' Nueva variable para almacenar el valor de la columna R
+    Dim TAOA, TAOAA, TAOAB, TAOAC, TAOAF, TAOAI, TAOAP, TAOAT, TAOAX As Integer
+    Dim completedTAOA, completedTAOAA, completedTAOAB, completedTAOAC, completedTAOAF, completedTAOAI, completedTAOAP, completedTAOAT, completedTAOAX As Integer
+    Dim expiredTAOA, expiredTAOAA, expiredTAOAB, expiredTAOAC, expiredTAOAF, expiredTAOAI, expiredTAOAP, expiredTAOAT, expiredTAOAX As Integer
+    Dim completadosTodoElSiglum As Integer
+    Dim caducadosTodoElSiglum As Integer
+    Dim siglum As String
+    Dim lastRowInformeFod As Long
+    Dim textoEnCurso As String
+    Dim diasQueTardaEnCaducarElCurso As Integer
+    Dim isMacroEjecutadaDesdeMacroCurriculums As Boolean
+    Dim diasCaducidadCurso As Integer
+    Dim isDebugging As Boolean
+            
+    isDebugging = False 'DEBUG
+    
+    'Desactivar actualizaciones para mejorar el rendimiento
+    Application.ScreenUpdating = False
+    Application.Calculation = xlCalculationManual
+    Application.EnableEvents = False
+    
+    'GUARDAMOS LA HOJA DEL INFORME EN LA VARIABLE PARA ACCEDER A ELLA DE MEJOR FORMA CUANDO SE NECESITE
+    Set wsReport = ThisWorkbook.Sheets("Informe")
+    
+    'LIMPIAMOS LOS COLORES Y VALORES ANTERIORES
+    wsReport.Range("A3:Z1000").ClearContents
+    wsReport.Range("A3:Z1000").Interior.Color = RGB(255, 255, 255)
+    wsReport.Range("A3:Z1000").Font.Color = RGB(0, 0, 0)
+    
+    'CREAMOS LA HOJA PARA LA TABLA SPANISH VERSION A PARTIR DE LA PLANTILLA "Informe" (que será la tabla English version)
+    Dim wsReportES As Worksheet
+    Dim wsDestino As Worksheet
+    Dim versionIdx As Integer
+    Dim versionCurso As String
+    Dim sufijoVersion As String
+    
+    Application.DisplayAlerts = False
+    On Error Resume Next
+    ThisWorkbook.Sheets("Informe Spanish").Delete
+    On Error GoTo 0
+    Application.DisplayAlerts = True
+    
+    wsReport.Copy After:=wsReport
+    Set wsReportES = ThisWorkbook.Sheets(wsReport.Index + 1)
+    wsReportES.Name = "Informe Spanish"
+    wsReport.Activate
+    ' Inicializar la fecha actual para realizar diferentes operaciones en el código
+    currentDate = Date
+    diasCaducidadCurso = 1095 ' 3 años
+    
+    '-----------------------------------------------------------------------------------
+    ' CARGAR USUARIOS_INACTIVOS DE LA MACRO CURRICULUMS
+    '-----------------------------------------------------------------------------------
+    
+    If Not isDebugging Then
+        Dim rutaWbMacroCurriculum As String
+        Dim wbMacroCurriculum As Workbook
+        Dim wsUsuariosInactivos As Worksheet
+        Dim lastRowUsuariosInactivos As Long
+        Dim usuariosInactivos As Object
+        Set usuariosInactivos = CreateObject("Scripting.Dictionary")
+        Dim valorColumnaInvisible As String
+        Dim valorColumnaIdUsuario As String
+        
+        
+        fullPathWbMacroCurriculum = "\\Spi60001.eadscasa.casa.corp\a400m san pablo\Lean_Manufacturing\10.- PCM\28. PCM\1.1.3 Macro Curriculums\Macro Curriculums.xlsm"
+        
+        
+        ' Verificar si el libro ya está abierto
+        For Each wb In Workbooks
+            If wb.Name = "Macro Curriculums.xlsm" Then
+                Set wbMacroCurriculum = wb
+                Exit For
+            End If
+        Next wb
+    
+        ' Si el libro no está abierto, abrirlo
+        If wbMacroCurriculum Is Nothing Then
+            Set wbMacroCurriculum = Workbooks.Open(fullPathWbMacroCurriculum)
+        End If
+    
+        Set wsUsuariosInactivos = wbMacroCurriculum.Sheets("Usuarios_Inactivos")
+        
+        With wsUsuariosInactivos
+        lastRowUsuariosInactivos = .Cells(.Rows.Count, "B").End(xlUp).Row
+        For filas = 2 To lastRowUsuariosInactivos
+            valorColumnaIdUsuario = Trim$(CStr(.Cells(filas, "C").Value))
+            valorColumnaInvisible = Trim$(CStr(.Cells(filas, "D").Value))
+            If Len(valorColumnaIdUsuario) > 0 Then
+                If Not usuariosInactivos.Exists(valorColumnaIdUsuario) Then
+                    usuariosInactivos.Add valorColumnaIdUsuario, valorColumnaInvisible
+                End If
+            End If
+        Next filas
+        End With
+        
+    End If
+    
+    '-----------------------------------------------------------------------------------
+    ' RECOPILAR Y PROCESAR LOS DATOS DE MY TEAM ALL LEARNING
+    '-----------------------------------------------------------------------------------
+    
+    Dim numeroColumnaNombreEnArchivoFuente As Integer
+    Dim numeroColumnaApellidosEnArchivoFuente As Integer
+    Dim numeroColumnaSiglumEnArchivoFuente As Integer
+    Dim numeroColumnaNombreManagerEnArchivoFuente As Integer
+    Dim nombreCursoBuscado As String
+    Dim numeroColumnaNombreCursoEnArchivoFuente As Integer
+    Dim numeroColumnaEstadoCursoEnArchivoFuente As Integer
+    Dim numeroColumnaCompletedDate As Integer
+    Dim numeroColumnaTrainingEndDate As Integer
+    Dim numeroColumnaTrainingStartingDate As Integer
+    Dim numeroColumnaUserID As Integer
+    
+    ' Obtener el path por parametro si se ejecuta desde la Macro Curriculum y si no hay, le asignamos uno por defecto
+    If rutaCarpetaWbMyTeamAllLearning = "" Then
+    'rutaCarpetaWbMyTeamAllLearning = "C:\Users\u44554\Desktop\13_Just & Fair in practice Your role in aviation safety reporting"
+    rutaCarpetaWbMyTeamAllLearning = "\\Spi60001.eadscasa.casa.corp\a400m san pablo\Lean_Manufacturing\10.- PCM\28. PCM\1.1.7 Macro Unificar All Learning\Output"
+        
+    End If
+    
+    ' Abrir el libro de Excel "My Team All Learning"
+    Set wbOrigenDataMyTeamAllLearning = AbrirArchivoMasRecientePorCreacion(rutaCarpetaWbMyTeamAllLearning, "^My Team All Learning*")
+    
+    ' Asignar la hoja de datos a una variable para acceder a ella
+    Set wsOrigenDataMyTeamAllLearning = wbOrigenDataMyTeamAllLearning.Sheets("My Team All Learning")
+    
+    ' Quitar cualquier filtro aplicado en la hoja de datos
+    If wsOrigenDataMyTeamAllLearning.AutoFilterMode Then
+        wsOrigenDataMyTeamAllLearning.AutoFilterMode = False
+    End If
+    
+    '@@@@@@ CABECERAS @@@@@@
+    
+    '--------------COLUMNA CON EL NOMBRE-------------
+    
+    numeroColumnaNombreEnArchivoFuente = getNumeroColumnaPorValorCeldaYNumeroFila(wsOrigenDataMyTeamAllLearning, "User - User first name", 1)
+    
+    '--------------COLUMNA CON EL APELLIDO -------------
+    
+    numeroColumnaApellidosEnArchivoFuente = getNumeroColumnaPorValorCeldaYNumeroFila(wsOrigenDataMyTeamAllLearning, "User - User last name", 1)
+    
+    '--------------COLUMNA IDS EMPLEADO -------------
+    
+    numeroColumnaUserID = getNumeroColumnaPorValorCeldaYNumeroFila(wsOrigenDataMyTeamAllLearning, "User - User ID", 1)
+    
+    '--------------COLUMNA CON EL SIGLUM -------------
+    
+    numeroColumnaSiglumEnArchivoFuente = getNumeroColumnaPorValorCeldaYNumeroFila(wsOrigenDataMyTeamAllLearning, "User - Supervisory", 1)
+    
+    '--------------COLUMNA CON EL NOMBRE DEL MANAGER -------------
+    
+    numeroColumnaNombreManagerEnArchivoFuente = getNumeroColumnaPorValorCeldaYNumeroFila(wsOrigenDataMyTeamAllLearning, "User - Manager - User full name", 1)
+    
+    '--------------COLUMNA CON LOS NOMBRES DE LOS CURSOS -------------
+    
+    numeroColumnaNombreCursoEnArchivoFuente = getNumeroColumnaPorValorCeldaYNumeroFila(wsOrigenDataMyTeamAllLearning, "Training - Training title", 1)
+    
+    '--------------COLUMNA CON LOS STATUS PARA EL CURSO -------------
+    
+    numeroColumnaEstadoCursoEnArchivoFuente = getNumeroColumnaPorValorCeldaYNumeroFila(wsOrigenDataMyTeamAllLearning, "Training record - Training record status", 1)
+    
+    '--------------COLUMNA STARTING DATE PARA EL CURSO -------------
+    
+    numeroColumnaTrainingStartingDate = getNumeroColumnaPorValorCeldaYNumeroFila(wsOrigenDataMyTeamAllLearning, "Training - Training starting date", 1)
+    
+    '-------------COLUMNA DE COMPLETED DATE PARA EL CURSO -------------
+    
+    numeroColumnaCompletedDate = getNumeroColumnaPorValorCeldaYNumeroFila(wsOrigenDataMyTeamAllLearning, "Training record - Training record completed date", 1)
+    
+    '--------------COLUMNA END DATE PARA EL CURSO -------------
+    
+    numeroColumnaTrainingEndDate = getNumeroColumnaPorValorCeldaYNumeroFila(wsOrigenDataMyTeamAllLearning, "Training - Training end date", 1)
+    
+    
+    '@@@@@@@@@@@@@@@@@@@@@@@@
+    
+    nombreCursoBuscado = "OnBoarding*"
+    
+    
+    'Obtener numero de filas en My Team All Learning
+    lastRow = wsOrigenDataMyTeamAllLearning.Cells(wsOrigenDataMyTeamAllLearning.Rows.Count, "A").End(xlUp).Row
+    
+    ' Crear un diccionario para almacenar los datos de cada persona
+    Set personas = CreateObject("Scripting.Dictionary")
+    
+    totalRegistros = lastRow - 1  ' Asumiendo que la primera numeroFila es de encabezados
+    registrosConID = 0
+    registrosConEstadoValido = 0
+    registrosIncluidos = 0
+    
+    For numeroFila = 2 To lastRow
+        
+        'Obtener el valor de la columna con el siglum
+        valorColumnaConSiglum = Trim(wsOrigenDataMyTeamAllLearning.Cells(numeroFila, numeroColumnaSiglumEnArchivoFuente).Value)
+        
+'        If InStr(1, valorColumnaConSiglum, "TAOA", vbTextCompare) = 0 Then
+'        If valorColumnaConSiglum = "TAOA*" Then
+'        MsgBox valor & valorColumnaConSiglum
+'        End If
+'            GoTo NextIteration
+'        End If
+'
+'        'FILTRADO POR SIGLUM tipo 3
+'
+        If (InStr(1, valorColumnaConSiglum, "TAOA", vbTextCompare) > 0) Then
+'            InStr(1, valorColumnaConSiglum, "TAOAA", vbTextCompare) > 0 Or _
+'            InStr(1, valorColumnaConSiglum, "TAOAT", vbTextCompare) > 0 Or _
+'            InStr(1, valorColumnaConSiglum, "TAOAF", vbTextCompare) > 0) Then
+
+        ' Verificar que los dos últimos caracteres sean dígitos
+'            If Len(valorColumnaConSiglum) >= 1 And _
+'               IsNumeric(Right(valorColumnaConSiglum, 1)) Then
+                ' El valor es válido, continuar con el procesamiento
+'            Else
+                ' Si no cumple, saltar al siguiente registro
+'                GoTo NextIteration
+'            End If
+            Else
+        ' Si no contiene "TAOAA", "TAOAT" o "TAOAF", saltar al siguiente registro
+            GoTo NextIteration
+        End If
+
+        
+        'FILTRADO POR SIGLUM tipo 1
+        ' Verificar si el valor de la columna R para la numeroFila que se está procesando ahora mismo, su valor comienza por TAOAA, TAOAT o TAOAF
+'        If InStr(1, valorColumnaConSiglum, "TAOAA", vbTextCompare) = 0 And _
+'        InStr(1, valorColumnaConSiglum, "TAOAT", vbTextCompare) = 0 And _
+'        InStr(1, valorColumnaConSiglum, "TAOAF", vbTextCompare) = 0 Then
+'        ' Si no contiene "TAOAA" o "TAOAF" o "TAOAT", saltar al siguiente registro
+'            GoTo NextIteration
+'        End If
+        
+        'FILTRADO POR SIGLUM tipo 2
+        
+'        Dim regex As Object
+'        Set regex = CreateObject("VBScript.RegExp")
+'
+'        'Configurar la expresión regular para buscar los patrones deseados
+'        With regex
+'            .Global = False
+'            .IgnoreCase = True
+'            .Pattern = "^(TAOAA|TAOAT|TAOAF)\d{2}$" ' Comienza con TAOAA, TAOAT o TAOAF seguido de 2 dígitos
+'        End With
+'
+'        ' Verificar si el valor de la columna R cumple con el patrón
+'        If Not regex.Test(valorColumnaConSiglum) Then
+'            ' Si no cumple con el patrón, saltar al siguiente registro
+'            GoTo NextIteration
+'        End If
+
+        
+        
+        ' Obtener el ID de la persona (columna S)
+        personID = Trim(wsOrigenDataMyTeamAllLearning.Cells(numeroFila, numeroColumnaUserID).Value)
+        
+        If personID = "" Then
+            ' Si no hay ID, saltar al siguiente registro
+            GoTo NextIteration
+        Else
+            
+            'Omitir a la gente con el valor "Si" en la columna "Invisible" de la Macro Curriculums, que hemos almacenado en el diccionario más arriba
+            If isDebugging = False Then
+                If usuariosInactivos.Exists(personID) Then
+                    valorInvisible = usuariosInactivos(personID)
+                    If valorInvisible = "Si" Then
+                        GoTo NextIteration
+                    End If
+                End If
+            End If
+                
+            registrosConID = registrosConID + 1
+                
+        End If
+            
+        personaKey = personID
+    
+        ' Obtener el estado del curso (columna F)
+        Status = wsOrigenDataMyTeamAllLearning.Cells(numeroFila, numeroColumnaEstadoCursoEnArchivoFuente).Value
+        'Si el estado es "Exempt", lo tratamos interanmente como completado
+        If Status = "Exempt" Then Status = "Completed"
+        'Si el estado es "Completed (Equivalent)", lo tratamos interanmente como completado
+        If Status = "Completed (Equivalent)" Then Status = "Completed"
+        'Agrupar Registered y started como Pending
+        If Status = "Registered" Or Status = "Started" Then Status = "Pending"
+    
+        ' Solo considerar registros con estado "registered" o "completed"
+             ' If Status = "Registered" Or Status = "Completed" Then
+        'Considerar registros registrados, completados o exentos
+        If Status = "Registered" Or Status = "Completed" Or Status = "Exempt" Or Status = "Started" Or Status = "Pending" Then
+        
+            registrosConEstadoValido = registrosConEstadoValido + 1
+    
+            ' Verificar si la persona ya está en el diccionario
+            If Not personas.Exists(personaKey) Then
+                ' Crear un nuevo diccionario para almacenar los datos de la persona
+                Set personaData = CreateObject("Scripting.Dictionary")
+                'personName = Trim(wsOrigenDataMyTeamAllLearning.Cells(numeroFila, "A").Value) & " " & Trim(wsOrigenDataMyTeamAllLearning.Cells(numeroFila, "B").Value)
+                
+                personaData("Nombre") = wsOrigenDataMyTeamAllLearning.Cells(numeroFila, numeroColumnaNombreEnArchivoFuente).Value
+                personaData("Apellidos") = wsOrigenDataMyTeamAllLearning.Cells(numeroFila, numeroColumnaApellidosEnArchivoFuente).Value
+                personaData("ID") = personID '
+                personaData("Manager") = wsOrigenDataMyTeamAllLearning.Cells(numeroFila, numeroColumnaNombreManagerEnArchivoFuente).Value  'User manager full name
+                personaData("Siglum") = Split(wsOrigenDataMyTeamAllLearning.Cells(numeroFila, numeroColumnaSiglumEnArchivoFuente).Value, " \ ")(1)
+    
+                ' Inicializar datos del curso
+                personaData("courseName") = ""
+                personaData("courseStatusEN") = ""
+                personaData("courseDateEN") = ""
+                personaData("courseStatusES") = ""
+                personaData("courseDateES") = ""
+    
+                ' Agregar la persona al diccionario
+                personas.Add personaKey, personaData
+                
+            Else
+            
+                ' Si ya existe, obtener sus datos
+                Set personaData = personas(personaKey)
+                
+            End If
+
+        ' Obtener datos del curso
+        courseName = wsOrigenDataMyTeamAllLearning.Cells(numeroFila, numeroColumnaNombreCursoEnArchivoFuente).Value  ' Nombre del curso (columna E)
+'        courseEndDate = wsOrigenDataMyTeamAllLearning.Cells(numeroFila, numeroColumnaTrainingEndDate).Value  ' Fecha de finalización (columna K)
+'        courseStartingDate = wsOrigenDataMyTeamAllLearning.Cells(numeroFila, numeroColumnaTrainingStartingDate).Value  ' Fecha de registro (columna J)
+        courseCompletedDate = wsOrigenDataMyTeamAllLearning.Cells(numeroFila, numeroColumnaCompletedDate).Value ' Otra fecha relevante (columna H)
+
+        ' Determinar la fecha del curso (cursoFecha)
+'        If IsDate(courseEndDate) Then
+'            cursoFecha = courseEndDate
+'        ElseIf IsDate(courseStartingDate) Then
+'            cursoFecha = courseStartingDate
+        If IsDate(courseCompletedDate) Then
+            cursoFecha = courseCompletedDate
+        Else
+            cursoFecha = ""
+        End If
+        
+        'Determinar si el curso Onboarding es la version English o la Spanish según su título
+        versionCurso = ""
+        If LCase(Trim(CStr(courseName))) Like LCase(nombreCursoBuscado) Then
+            If InStr(1, courseName, "English", vbTextCompare) > 0 Then
+                versionCurso = "EN"
+            ElseIf InStr(1, courseName, "Spanish", vbTextCompare) > 0 Then
+                versionCurso = "ES"
+            End If
+        End If
+        
+        If versionCurso <> "" Then
+            ' Verificar si este curso es más reciente que el anterior registrado de esa misma version
+            If IsDate(cursoFecha) Then
+                If IsDate(personaData("courseDate" & versionCurso)) Then
+                    If cursoFecha > personaData("courseDate" & versionCurso) Then
+                        personaData("courseStatus" & versionCurso) = Status
+                        personaData("courseDate" & versionCurso) = cursoFecha
+                    End If
+                Else
+                    personaData("courseStatus" & versionCurso) = Status
+                    personaData("courseDate" & versionCurso) = cursoFecha
+                End If
+            Else
+                personaData("courseStatus" & versionCurso) = Status 'SI NO HAY FECHA, GUARDAMOS EL STATUS QUE HAYA
+            End If
+            registrosIncluidos = registrosIncluidos + 1
+        End If
+    End If
+NextIteration:
+    Next numeroFila
+    
+    '-----------------------------------------------------------------------------------
+    ' VERIFICAR SI HAY DATOS PARA GENERAR EL INFORME
+    '-----------------------------------------------------------------------------------
+    If personas.Count = 0 Then
+        MsgBox "No hay datos con estado 'Registered' o 'Completed' para generar el informe.", vbInformation
+    End If
+    
+    '-----------------------------------------------------------------------------------
+    ' LLENAR EL INFORME CON LOS DATOS PROCESADOS EN LA HOJA "Informe"
+    '-----------------------------------------------------------------------------------
+    
+    For versionIdx = 1 To 2
+    
+    If versionIdx = 1 Then
+        Set wsDestino = wsReport 'Tabla English version
+        sufijoVersion = "EN"
+    Else
+        Set wsDestino = wsReportES 'Tabla Spanish version
+        sufijoVersion = "ES"
+    End If
+    
+    reportRow = 3 'Donde comienza la macro a rellenar en la plantilla del informe
+    
+    For Each personaKey In personas.Keys
+        Set personaData = personas(personaKey)
+        
+        'Solo se incluye en cada tabla a quien tiene registro del curso en esa version
+        If personaData("courseStatus" & sufijoVersion) = "" Then GoTo SiguientePersona
+        
+        With wsDestino
+        
+            ' Escribir los datos del empleado
+            .Cells(reportRow, "A").Value = personaData("Apellidos")
+            .Cells(reportRow, "B").Value = personaData("Nombre")
+            .Cells(reportRow, "C").Value = personaData("ID")
+            .Cells(reportRow, "D").Value = personaData("Siglum")
+            .Cells(reportRow, "E").Value = personaData("Manager")
+            
+            'DEBUG el If entero
+            If Not isDebugging Then
+                'Comprobar nuevamente si el ID de la persona está en la lista de usuarios inactivos pero con el valor "No" para pintarle el nombre y apellidos en rojo
+                If usuariosInactivos.Exists(personaData("ID")) Then
+                    valorInvisible = usuariosInactivos(personaData("ID"))
+                    If valorInvisible = "No" Then
+                        .Cells(reportRow, "A").Font.Color = RGB(255, 0, 0)
+                        .Cells(reportRow, "B").Font.Color = RGB(255, 0, 0)
+                    End If
+                End If
+            End If
+            
+            ' @ PROCESAR EN LA HOJA DEL INFORME LOS DATOS DEL CURSO
+            
+            Dim numeroColumnaCabeceraCursoEnInformeDestino As Integer
+            Dim courseStatus As String
+            Dim courseDate As Variant 'Tiene que ser variant por si no existe fecha que lo almacene como vacio
+            Dim CursoRecienteFechaCaducidad As Date
+            Dim diferenciaMeses As Long
+            
+            numeroColumnaCabeceraCursoEnInformeDestino = getNumeroColumnaPorValorCeldaYNumeroFila(wsDestino, nombreCursoBuscado, 1)
+            
+            courseStatus = personaData("courseStatus" & sufijoVersion)
+            courseDate = personaData("courseDate" & sufijoVersion)
+            
+            'Determinar la vigencia del curso con posible nuevo reasignamiento del estado
+            If IsDate(courseDate) Then
+                .Cells(reportRow, numeroColumnaCabeceraCursoEnInformeDestino + 1).Value = courseDate
+                If courseStatus = "Completed" Then
+                    If DateDiff("d", courseDate, currentDate) >= diasCaducidadCurso Then
+                        courseStatus = "Completed (Caducado)"
+                    Else
+                        courseStatus = "Completed"
+                    End If
+                End If
+            End If
+            
+            'Si no hay un estado para el curso es que no ha hecho ninguno y se pone pending
+            If courseStatus = "" Then
+                .Cells(reportRow, numeroColumnaCabeceraCursoEnInformeDestino).Value = "Pending"
+                '.Cells(reportRow, numeroColumnaCabeceraCursoEnInformeDestino).Interior.Color = RGB(255, 255, 0) ' Fondo amarillo
+                .Cells(reportRow, numeroColumnaCabeceraCursoEnInformeDestino).Font.Color = RGB(255, 0, 0) ' Texto Rojo
+            Else
+                .Cells(reportRow, numeroColumnaCabeceraCursoEnInformeDestino).Value = courseStatus
+            End If
+            
+            ' Aplicar formato según courseStatus
+            Select Case courseStatus
+                Case "Completed"
+                    .Cells(reportRow, colOffset + 6).Font.Color = RGB(0, 0, 0) ' Rojo
+                    .Cells(reportRow, colOffset + 6).Interior.Color = vbGreen ' Verde
+                            
+                            'Comprobamos la próxima fecha de caducidad del curso
+                            CursoRecienteFechaCaducidad = DateAdd("d", diasCaducidadCurso, courseDate)
+                            
+'                            'Escribimos la fecha de caducidad
+'                            .Cells(reportRow, numeroColumnaCabeceraCursoEnInformeDestino + 2) = Int(CursoRecienteFechaCaducidad)
+'
+'                            'Comprobamos la diferencia de tiempo que hay entre una fecha y otra para ver si caduca en los próximos 3 meses
+'                            diferenciaMeses = DateDiff("m", courseDate, CursoRecienteFechaCaducidad)
+                            
+'                            'Le ponemos color rojo al fondo de la celda si en 3 o menos meses caduca
+'                            If diferenciaMeses <= 3 Then
+'                                .Cells(reportRow, numeroColumnaCabeceraCursoEnInformeDestino + 2).Interior.Color = RGB(255, 165, 0)
+'                            End If
+                            
+                Case "Registered"
+                    .Cells(reportRow, numeroColumnaCabeceraCursoEnInformeDestino).Font.Color = RGB(0, 0, 0) ' Negro
+                    .Cells(reportRow, numeroColumnaCabeceraCursoEnInformeDestino).Interior.Color = RGB(255, 255, 0) ' Amarillo
+                Case "Completed (Caducado)"
+                    .Cells(reportRow, numeroColumnaCabeceraCursoEnInformeDestino).Font.Color = RGB(255, 165, 0) ' Naranja
+                    .Cells(reportRow, numeroColumnaCabeceraCursoEnInformeDestino + 1).Font.Color = RGB(0, 0, 0) ' Negro
+                    .Cells(reportRow, numeroColumnaCabeceraCursoEnInformeDestino + 1).Interior.Color = RGB(255, 0, 0) ' Rojo
+            End Select
+            
+            If IsDate(courseDate) Then
+                .Cells(reportRow, numeroColumnaCabeceraCursoEnInformeDestino + 1).NumberFormat = "dd/mm/yyyy" 'Fecha curso
+                .Cells(reportRow, numeroColumnaCabeceraCursoEnInformeDestino + 2).NumberFormat = "dd/mm/yyyy" 'Fecha caducidad
+            End If
+            
+            
+        End With
+        reportRow = reportRow + 1
+SiguientePersona:
+    Next personaKey
+    
+    Next versionIdx
+    
+    '------------------------------------------------------------------------------------------------------------------------------------------------------------------
+    '((((FALTA AJUSTAR)))) EXPORTAR LAS HOJAS DE DATOS A UN NUEVO LIBRO QUE SERÁ EL INFORME PERO PRIMERO RELLENAMOS LA HOJA RESUMEN
+    '-----------------------------------------------------------------------------------------------------------------------------------------------------------------
+    
+    'Copiamos la hoja donde se ha generado la información del curso
+    wsReport.Copy
+    
+    'Al copiar la hoja se abrirá en un nuevo libro y al abrirse será en ese momento el ActiveWorkbook, asi que lo metemos en una variable
+    Set informeWB = ActiveWorkbook
+    
+    'Copiamos también la hoja de la Spanish version al libro del informe y la eliminamos de la macro para dejarla limpia
+    wsReportES.Copy After:=informeWB.Sheets(informeWB.Sheets.Count)
+    Application.DisplayAlerts = False
+    wsReportES.Delete
+    Application.DisplayAlerts = True
+          
+    Set resumenKPIWs = ThisWorkbook.Sheets("Resumen Formación OnBoarding")
+          
+    'Copiamos al libro del informe para esta PDR, la hoja con la plantilla de los KPI correspondiente
+    resumenKPIWs.Copy Before:=informeWB.Sheets(1)
+    
+    '------------------------------------------------------------------------------------------------------------------------------------------------------------------
+    'GUARDAMOS EL INFORME TENIENDO EN CUENTA QUE YA EXISTA UNO CON EL MISMO NOMBRE
+    '-----------------------------------------------------------------------------------------------------------------------------------------------------------------
+    Dim nombreInforme As String
+    Dim extensionInforme As String
+    Dim rutaCarpetaDestinoInformes As String
+    Dim rutaConNombreInforme As String
+    Dim numeroArchivoConMismoNombre As Integer
+    
+    rutaCarpetaDestinoInformes = ThisWorkbook.Path & "\Informes"
+    
+     'Si existe la carpeta Informes en la ruta donde está la macro, lo exportará ahí, si no, creará la carpeta Informes
+    If Dir(rutaCarpetaDestinoInformes, vbDirectory) = "" Then
+        MkDir rutaCarpetaDestinoInformes
+    End If
+    
+     'Exportar el informe con el nombre inicial correspondiente al curriculum de este código
+    nombreInforme = "OnBoarding Aviation Safety " & Format(Date, "mmm.dd.yyyy")
+    extensionInforme = ".xlsx"
+    rutaCarpetaDestinoInformes = ThisWorkbook.Path & "\Informes\"
+    rutaConNombreInforme = rutaCarpetaDestinoInformes & nombreInforme & extensionInforme
+    numeroArchivoConMismoNombre = 0
+    
+    ' Verifica si el archivo ya existe
+    Do While Dir(rutaConNombreInforme) <> ""
+        numeroArchivoConMismoNombre = numeroArchivoConMismoNombre + 1
+        rutaConNombreInforme = rutaCarpetaDestinoInformes & nombreInforme & " (" & numeroArchivoConMismoNombre & ")" & extensionInforme
+    Loop
+     
+    'Guardamos el libro con el nombre de la hoja y en la ruta que en el código hemos puesto (ruta raiz de la macro/Informes)
+    On Error Resume Next
+    wbOrigenDataMyTeamAllLearning.Close SaveChanges:=False
+    informeWB.SaveAs Filename:=rutaConNombreInforme, FileFormat:=xlOpenXMLWorkbook
+    'informeWB.Close SaveChanges:=False
+    On Error GoTo 0
+    
+    ' Restaurar configuraciones
+    Application.ScreenUpdating = True
+    Application.Calculation = xlCalculationAutomatic
+    Application.EnableEvents = True
+    
+    'Cerramos y guardamos el libro desde el que NO se ha ejecutado la macro
+    If isMacroEjecutadaDesdeMacroCurriculums Then
+        ThisWorkbook.Close SaveChanges:=True
+    Else
+        If Not isDebugging Then
+            wbMacroCurriculum.Close SaveChanges:=False
+        End If
+        MsgBox ("Ejecución finalizada e informe guardado en la carpeta Informes que está en la carpeta de esta Macro")
+    End If
+
+End Sub
+Function getNumeroColumnaPorValorCeldaYNumeroFila(ByRef ws As Worksheet, ByVal valor As String, ByVal numeroFila As Integer)
+    Dim filaCabeceras As Range
+    Dim celdaEncontrada As Range
+        
+    ' Definir el rango de búsqueda en la numeroFila específica
+    Set filaCabeceras = ws.Rows(1)
+
+    ' Buscar el valor en la numeroFila
+    Set celdaEncontrada = filaCabeceras.Find(What:=valor, LookAt:=xlWhole, MatchCase:=False)
+    
+    ' Verificar si se encontró el valor
+    If Not celdaEncontrada Is Nothing Then
+        getNumeroColumnaPorValorCeldaYNumeroFila = celdaEncontrada.Column
+    Else
+        MsgBox "El valor " & valor & " no se encuentra en la numeroFila " & numeroFila
+        End 'Termina supuestamente la ejecución del código
+    End If
+    
+End Function
+Function AbrirArchivoMasRecientePorCreacion(rutaCarpeta As String, patronRegEx As String) As Workbook
+    Dim fso As Object
+    Dim carpeta As Object
+    Dim archivo As Object
+    Dim regex As Object
+    Dim archivoReciente As String
+    Dim fechaMasReciente As Date
+    Dim wb As Workbook
+    
+    ' Crear objetos
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    Set regex = CreateObject("VBScript.RegExp")
+    
+    ' Configurar expresión regular
+    regex.Pattern = patronRegEx
+    regex.IgnoreCase = True
+    regex.Global = False
+    
+    ' Verificar si la carpeta existe
+    If Not fso.FolderExists(rutaCarpeta) Then
+        MsgBox "La carpeta no existe: " & rutaCarpeta, vbExclamation, "Error"
+        Exit Function
+    End If
+    
+    ' Obtener la carpeta
+    Set carpeta = fso.GetFolder(rutaCarpeta)
+    
+    ' Inicializar variables
+    fechaMasReciente = 0
+    archivoReciente = ""
+    
+    ' Recorrer archivos en la carpeta
+    For Each archivo In carpeta.Files
+        ' Verificar si el nombre del archivo coincide con la expresión regular y es un archivo .xlsx
+        If regex.Test(archivo.Name) And LCase(Right(archivo.Name, 5)) = ".xlsx" Then
+            ' Comparar fechas de creación
+            If archivo.DateCreated > fechaMasReciente Then
+                fechaMasReciente = archivo.DateCreated
+                archivoReciente = archivo.Path
+            End If
+        End If
+    Next archivo
+    
+    ' Si se encontró un archivo, abrirlo
+    If archivoReciente <> "" Then
+        Set wb = Workbooks.Open(archivoReciente)
+        Set AbrirArchivoMasRecientePorCreacion = wb
+    Else
+        MsgBox "No se encontró ningún archivo que coincida con " & patronRegEx
+    End If
+
+    ' Liberar memoria
+    Set fso = Nothing
+    Set carpeta = Nothing
+    Set regex = Nothing
+End Function
