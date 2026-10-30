@@ -64,8 +64,8 @@ Sub GenerarInformeCursoAviationSafety(Optional ByVal rutaCarpetaWbMyTeamAllLearn
     wsReport.Range("A3:Z1000").Interior.Color = RGB(255, 255, 255)
     wsReport.Range("A3:Z1000").Font.Color = RGB(0, 0, 0)
     
-    'CREAMOS LA HOJA PARA LA TABLA SPANISH VERSION A PARTIR DE LA PLANTILLA "Informe" (que será la tabla English version)
-    Dim wsReportES As Worksheet
+    'CREAMOS LA HOJA PARA LA TABLA ENGLISH VERSION A PARTIR DE LA PLANTILLA "Informe" (que será la tabla Spanish version)
+    Dim wsReportEN As Worksheet
     Dim wsDestino As Worksheet
     Dim versionIdx As Integer
     Dim versionCurso As String
@@ -73,13 +73,13 @@ Sub GenerarInformeCursoAviationSafety(Optional ByVal rutaCarpetaWbMyTeamAllLearn
     
     Application.DisplayAlerts = False
     On Error Resume Next
-    ThisWorkbook.Sheets("Informe Spanish").Delete
+    ThisWorkbook.Sheets("Informe English").Delete
     On Error GoTo 0
     Application.DisplayAlerts = True
     
     wsReport.Copy After:=wsReport
-    Set wsReportES = ThisWorkbook.Sheets(wsReport.Index + 1)
-    wsReportES.Name = "Informe Spanish"
+    Set wsReportEN = ThisWorkbook.Sheets(wsReport.Index + 1)
+    wsReportEN.Name = "Informe English"
     wsReport.Activate
     ' Inicializar la fecha actual para realizar diferentes operaciones en el código
     currentDate = Date
@@ -419,11 +419,11 @@ NextIteration:
     For versionIdx = 1 To 2
     
     If versionIdx = 1 Then
-        Set wsDestino = wsReport 'Tabla English version
-        sufijoVersion = "EN"
-    Else
-        Set wsDestino = wsReportES 'Tabla Spanish version
+        Set wsDestino = wsReport 'Tabla Spanish version (hoja "Informe", la que usa la tabla actual del Resumen)
         sufijoVersion = "ES"
+    Else
+        Set wsDestino = wsReportEN 'Tabla English version (hoja "Informe English")
+        sufijoVersion = "EN"
     End If
     
     reportRow = 3 'Donde comienza la macro a rellenar en la plantilla del informe
@@ -535,22 +535,26 @@ SiguientePersona:
     '((((FALTA AJUSTAR)))) EXPORTAR LAS HOJAS DE DATOS A UN NUEVO LIBRO QUE SERÁ EL INFORME PERO PRIMERO RELLENAMOS LA HOJA RESUMEN
     '-----------------------------------------------------------------------------------------------------------------------------------------------------------------
     
-    'Copiamos la hoja donde se ha generado la información del curso
-    wsReport.Copy
+    'Hoja de la plantilla de los KPI
+    Set resumenKPIWs = ThisWorkbook.Sheets("Resumen Formación OnBoarding")
     
-    'Al copiar la hoja se abrirá en un nuevo libro y al abrirse será en ese momento el ActiveWorkbook, asi que lo metemos en una variable
+    'Copiamos las tres hojas JUNTAS a un libro nuevo (Resumen, Informe Spanish e Informe English) para que las fórmulas del Resumen
+    'sigan apuntando a las hojas de ese mismo libro y no al libro de la macro
+    ThisWorkbook.Sheets(Array(resumenKPIWs.Name, wsReport.Name, wsReportEN.Name)).Copy
+    
+    'Al copiar las hojas se abrirá un nuevo libro y en ese momento será el ActiveWorkbook, asi que lo metemos en una variable
     Set informeWB = ActiveWorkbook
     
-    'Copiamos también la hoja de la Spanish version al libro del informe y la eliminamos de la macro para dejarla limpia
-    wsReportES.Copy After:=informeWB.Sheets(informeWB.Sheets.Count)
+    'Dejamos el Resumen como primera hoja
+    informeWB.Sheets(resumenKPIWs.Name).Move Before:=informeWB.Sheets(1)
+    
+    'Eliminamos la hoja English de la macro para dejarla limpia como plantilla
     Application.DisplayAlerts = False
-    wsReportES.Delete
+    wsReportEN.Delete
     Application.DisplayAlerts = True
-          
-    Set resumenKPIWs = ThisWorkbook.Sheets("Resumen Formación OnBoarding")
-          
-    'Copiamos al libro del informe para esta PDR, la hoja con la plantilla de los KPI correspondiente
-    resumenKPIWs.Copy Before:=informeWB.Sheets(1)
+    
+    'Generamos en el Resumen la tabla de la version English, igual que la de la version Spanish
+    Call GenerarTablaResumenEnglish(informeWB.Sheets(resumenKPIWs.Name), wsReport.Name, "Informe English")
     
     '------------------------------------------------------------------------------------------------------------------------------------------------------------------
     'GUARDAMOS EL INFORME TENIENDO EN CUENTA QUE YA EXISTA UNO CON EL MISMO NOMBRE
@@ -603,6 +607,96 @@ SiguientePersona:
         MsgBox ("Ejecución finalizada e informe guardado en la carpeta Informes que está en la carpeta de esta Macro")
     End If
 
+End Sub
+Sub GenerarTablaResumenEnglish(ByRef wsResumen As Worksheet, ByVal nombreHojaSpanish As String, ByVal nombreHojaEnglish As String)
+    'Duplica en la hoja Resumen la tabla de la version Spanish (titulo, cabeceras, POPULATION, COMPLETED, PENDING y TOTAL)
+    'debajo de la original, cambiando el titulo y apuntando sus fórmulas a la hoja de la version English
+    Dim celdaTitulo As Range
+    Dim rngBusqueda As Range
+    Dim celdaAux As Range
+    Dim filaTitulo As Long
+    Dim filaPopulation As Long
+    Dim filaTotal As Long
+    Dim filaDestino As Long
+    Dim offsetFilas As Long
+    Dim primeraCol As Long
+    Dim ultimaCol As Long
+    Dim filaIdx As Long
+    Dim colIdx As Long
+    Dim textoTitulo As String
+    Dim textoNuevoTitulo As String
+    
+    'Localizar la tabla de la version Spanish por su título
+    Set celdaTitulo = wsResumen.Cells.Find(What:="Onboarding Aviation Safety", LookIn:=xlValues, LookAt:=xlPart, SearchOrder:=xlByRows, MatchCase:=False)
+    If celdaTitulo Is Nothing Then
+        MsgBox "No se ha encontrado en la hoja Resumen la tabla con título 'Onboarding Aviation Safety'. No se ha generado la tabla English.", vbExclamation
+        Exit Sub
+    End If
+    
+    filaTitulo = celdaTitulo.Row
+    primeraCol = celdaTitulo.MergeArea.Column
+    
+    'Localizar las filas POPULATION y TOTAL de esa tabla (columna de etiquetas)
+    Set rngBusqueda = wsResumen.Range(wsResumen.Cells(filaTitulo, primeraCol), wsResumen.Cells(filaTitulo + 15, primeraCol))
+    
+    Set celdaAux = rngBusqueda.Find(What:="POPULATION", LookIn:=xlValues, LookAt:=xlWhole, MatchCase:=False)
+    If celdaAux Is Nothing Then
+        MsgBox "No se ha encontrado la fila POPULATION bajo el título de la tabla. No se ha generado la tabla English.", vbExclamation
+        Exit Sub
+    End If
+    filaPopulation = celdaAux.Row
+    
+    Set celdaAux = rngBusqueda.Find(What:="TOTAL", LookIn:=xlValues, LookAt:=xlWhole, MatchCase:=False)
+    If celdaAux Is Nothing Then
+        MsgBox "No se ha encontrado la fila TOTAL bajo el título de la tabla. No se ha generado la tabla English.", vbExclamation
+        Exit Sub
+    End If
+    filaTotal = celdaAux.Row
+    
+    'Última columna de la tabla (el título está combinado a lo ancho de la tabla; si no, se mira la fila de cabeceras)
+    If celdaTitulo.MergeCells Then
+        ultimaCol = primeraCol + celdaTitulo.MergeArea.Columns.Count - 1
+    Else
+        ultimaCol = wsResumen.Cells(filaPopulation - 1, wsResumen.Columns.Count).End(xlToLeft).Column
+    End If
+    
+    'Si la tabla original no tiene fórmulas no se puede replicar de forma fiable, así que no se genera
+    If Not wsResumen.Cells(filaPopulation, primeraCol + 1).HasFormula Then
+        MsgBox "La tabla del Resumen no contiene fórmulas, no se puede replicar para la version English.", vbExclamation
+        Exit Sub
+    End If
+    
+    'Destino: 2 filas en blanco debajo de la tabla original (o debajo de todo lo que haya si esa zona no está vacía)
+    filaDestino = filaTotal + 3
+    If Application.WorksheetFunction.CountA(wsResumen.Range(wsResumen.Cells(filaDestino, primeraCol), wsResumen.Cells(filaDestino + (filaTotal - filaTitulo), ultimaCol))) > 0 Then
+        filaDestino = wsResumen.Cells.Find(What:="*", SearchOrder:=xlByRows, SearchDirection:=xlPrevious).Row + 3
+    End If
+    offsetFilas = filaDestino - filaTitulo
+    
+    'Copiar la tabla completa (formato incluido) y ajustar alturas de fila
+    wsResumen.Range(wsResumen.Cells(filaTitulo, primeraCol), wsResumen.Cells(filaTotal, ultimaCol)).Copy _
+        Destination:=wsResumen.Cells(filaDestino, primeraCol)
+    Application.CutCopyMode = False
+    
+    For filaIdx = filaTitulo To filaTotal
+        wsResumen.Rows(filaIdx + offsetFilas).RowHeight = wsResumen.Rows(filaIdx).RowHeight
+    Next filaIdx
+    
+    'Apuntar las fórmulas de la tabla nueva a la hoja de la version English (las referencias internas de la tabla se mantienen relativas a la tabla nueva)
+    For filaIdx = filaPopulation To filaTotal
+        For colIdx = primeraCol + 1 To ultimaCol
+            If wsResumen.Cells(filaIdx, colIdx).HasFormula Then
+                wsResumen.Cells(filaIdx + offsetFilas, colIdx).FormulaR1C1 = _
+                    Replace(wsResumen.Cells(filaIdx, colIdx).FormulaR1C1, nombreHojaSpanish & "!", "'" & nombreHojaEnglish & "'!")
+            End If
+        Next colIdx
+    Next filaIdx
+    
+    'Cambiar el título de la tabla nueva
+    textoTitulo = CStr(celdaTitulo.Value)
+    textoNuevoTitulo = Replace(textoTitulo, "espa" & ChrW(241) & "ol", "ingl" & ChrW(233) & "s", , , vbTextCompare)
+    If textoNuevoTitulo = textoTitulo Then textoNuevoTitulo = textoTitulo & " (English version)"
+    wsResumen.Cells(filaTitulo + offsetFilas, primeraCol).Value = textoNuevoTitulo
 End Sub
 Function getNumeroColumnaPorValorCeldaYNumeroFila(ByRef ws As Worksheet, ByVal valor As String, ByVal numeroFila As Integer)
     Dim filaCabeceras As Range
