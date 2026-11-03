@@ -34,6 +34,7 @@ Sub GenerarInformeCursoAviationSafety(Optional ByVal rutaCarpetaWbMyTeamAllLearn
     Dim valorColumnaConSiglum As String
     Dim siglum As String
     Dim nombreCursoBuscado As String
+    Dim cursosAdmitidos As Variant
     Dim isMacroEjecutadaDesdeMacroCurriculums As Boolean
     Dim diasCaducidadCurso As Integer
     Dim isDebugging As Boolean
@@ -56,7 +57,19 @@ Sub GenerarInformeCursoAviationSafety(Optional ByVal rutaCarpetaWbMyTeamAllLearn
     currentDate = Date
     diasCaducidadCurso = 1095 ' 3 años
     
-    ' Definimos el nombre de la cabecera exacta que debe buscar en la hoja "Informe" destino
+    '-----------------------------------------------------------------------------------
+    ' DEFINICIÓN DE CURSOS Y CABECERA DESTINO
+    '-----------------------------------------------------------------------------------
+    cursosAdmitidos = Array( _
+        "Just & Fair Basics for Safety Reporting Principles - Spanish version", _
+        "Just & Fair Basics for Safety Reporting Principles - English version", _
+        "Just & Fair Basics for Safety Reporting Principles - French version", _
+        "Just & Fair Basics for Safety Reporting Principles - Chinese version", _
+        "Just & Fair Basics for Safety Reporting Principles - German version", _
+        "Just & Fair in practice: Your role in aviation safety reporting" _
+    )
+    
+    ' Mantenemos el nombre de la cabecera del informe original para que sepa en qué columna volcar el resultado
     nombreCursoBuscado = "Just & Fair in practice: Your role in aviation safety reporting"
     
     '-----------------------------------------------------------------------------------
@@ -226,8 +239,8 @@ Sub GenerarInformeCursoAviationSafety(Optional ByVal rutaCarpetaWbMyTeamAllLearn
                 cursoFecha = ""
             End If
             
-            ' Validación flexible para aceptar cualquiera de los cursos de la familia Just & Fair
-            If EsCursoValido(courseName) Then
+            ' Validación estricta contra el Array de cursos admitidos
+            If EsCursoValido(courseName, cursosAdmitidos) Then
                 If IsDate(cursoFecha) Then
                     If IsDate(personaData("courseDate")) Then
                         If cursoFecha > personaData("courseDate") Then
@@ -441,16 +454,19 @@ Function AbrirArchivoMasRecientePorCreacion(rutaCarpeta As String, patronRegEx A
     Set regex = Nothing
 End Function
 
-Function EsCursoValido(ByVal nombreCurso As String) As Boolean
-    Dim textoLimpio As String
-    textoLimpio = LCase(Trim(nombreCurso))
+Function EsCursoValido(ByVal nombreCurso As String, ByVal listaCursos As Variant) As Boolean
+    Dim i As Long
+    Dim cursoLimpio As String
+    Dim itemLista As String
     
+    cursoLimpio = LCase(Trim(nombreCurso))
     EsCursoValido = False
     
-    ' Detecta tanto la versión práctica como cualquiera de los 5 idiomas de Basics for Safety Reporting Principles
-    If InStr(1, textoLimpio, "just & fair", vbTextCompare) > 0 And _
-       (InStr(1, textoLimpio, "safety reporting", vbTextCompare) > 0 Or _
-        InStr(1, textoLimpio, "aviation safety reporting", vbTextCompare) > 0) Then
-        EsCursoValido = True
-    End If
+    For i = LBound(listaCursos) To UBound(listaCurses = UBound(listaCursos) ' Bucle seguro
+        itemLista = LCase(Trim(listaCursos(i)))
+        If cursoLimpio = itemLista Then
+            EsCursoValido = True
+            Exit Function
+        End If
+    Next i
 End Function
