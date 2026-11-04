@@ -1,0 +1,185 @@
+'==============================================================================
+' QUALITY ESSENTIALS - TEAM LEADERS Y STEERCO
+' Basado en analizeFileCU_HS (Health & Safety).
+'
+' CONTENIDO DE ESTE ARCHIVO
+'   A) Cambios minimos en codigo existente (4 retoques en Auxfunctions)
+'   B) Funcion nueva analizeFileCU_QES (pegar en Auxfunctions)
+'   C) Cambios en FormCurriculums
+'   D) Filas nuevas en la hoja "Ejecutar"
+'==============================================================================
+
+
+'==============================================================================
+' A) CAMBIOS MINIMOS EN AUXFUNCTIONS (codigo existente)
+'==============================================================================
+
+' A1) Arriba del todo, junto a las demas constantes, anadir:
+'
+'       Private Const NAME_QES = "Quality Essentials TL-SteerCo"
+'
+' A2) En removeColumns, cambiar la primera linea del Select Case:
+'
+'       Case NAME_HS, NAME_QE, NAME_EC, NAME_POA
+'     por
+'       Case NAME_HS, NAME_QE, NAME_EC, NAME_POA, NAME_QES
+'
+' A3) En checkCurriculumCompletion, cambiar la condicion del If:
+'
+'       If ws.name = "Reporte BC" Or ws.name = "Reporte WC" Then
+'     por
+'       If ws.name = "Reporte BC" Or ws.name = "Reporte WC" Or _
+'          ws.name = "Reporte TL" Or ws.name = "Reporte SteerCo" Then
+'
+' A4) En fillEmptyStatus, cambiar la firma:
+'
+'       Private Sub fillEmptyStatus(ByVal checkAllLearningFile As Boolean)
+'     por
+'       Private Sub fillEmptyStatus(ByVal checkAllLearningFile As Boolean, _
+'               Optional ByVal learningKey As String = "My Team All Learning", _
+'               Optional ByVal learningFilter As String = "My Team All Learning*.xls*")
+'
+'     y dentro, cambiar la linea
+'
+'       filePath = getFilePath("My Team All Learning", "My Team All Learning*.xls*")
+'     por
+'       filePath = getFilePath(learningKey, learningFilter)
+'
+'     (Las llamadas existentes siguen funcionando igual: los parametros son opcionales.)
+
+
+'==============================================================================
+' B) FUNCION NUEVA (pegar en Auxfunctions, junto a analizeFileCU_HS)
+'==============================================================================
+
+' Nombres exactos de los curriculums en la hoja de Curriculum_Details
+' (celda de la columna A que precede a cada tabla). VERIFICAR.
+Private Const CU_QES_TL = "CU-ADS-M-ALL-Quality Essentials for Team Leaders"
+Private Const CU_QES_SC = "CU-ADS-M-ALL-Quality Essentials for SteerCo"
+
+Public Function analizeFileCU_QES() As Workbook
+
+    Dim importFilePath, fileName As String
+    Dim exportWB As Workbook
+    Dim curriculums, siglumDictionary As Dictionary
+
+    'Hojas a separar
+    Set curriculums = New Dictionary
+    curriculums.Add CU_QES_TL, "Reporte TL"
+    curriculums.Add CU_QES_SC, "Reporte SteerCo"
+
+    'Fichero Curriculum_Details (el mas reciente de la carpeta de la fila de Ejecutar)
+    importFilePath = getFilePath(NAME_QES, fileFilter:="Curriculum_Details*.xls*")
+
+    Application.ScreenUpdating = False
+    Application.DisplayAlerts = False
+
+    If importFilePath <> "Falso" Then
+
+        Set exportWB = Workbooks.Open(fileName:=importFilePath, ReadOnly:=False)
+
+        exportWB.Sheets(1).Activate
+
+        Set siglumDictionary = getSiglumDictionary()
+
+        Call removeExtraRows
+
+        Call removeColumns(curriculum:=NAME_QES)
+
+        Call insertColumn(name:="Siglum", position:=4)
+
+        Call fillSiglumColumn(siglumDictionary, column:=4)
+
+        Call splitCurriculums(curriculums)
+
+        Call removeInactiveUsers(exportWB, "Employee ID")
+
+        Call colorInactiveUsers(exportWB, "Employee ID")
+
+        Call autofitColumns
+
+        Call formatTable
+
+        'Cursos de 2 en 2 columnas (Status / Completion date), desde la columna 7
+        Call groupCourses(exportWB.Sheets("Reporte TL"), startColumn:=7, endColumn:=0)
+        Call groupCourses(exportWB.Sheets("Reporte SteerCo"), startColumn:=7, endColumn:=0)
+
+        'Rellena estados vacios/caducados desde "My team Quality essential.xlsx"
+        Call fillEmptyStatus(checkAllLearningFile:=True, _
+                             learningKey:="My Team Quality Essentials", _
+                             learningFilter:="My team Quality essential*.xls*")
+
+        Application.Wait Now + TimeValue("00:00:02")
+
+        Call applyColorRules
+
+        Application.Wait Now + TimeValue("00:00:02")
+
+        Call colorExpiredDates
+
+        Call checkCurriculumCompletion
+
+        Call checkCoursesCompletion(exportWB.Sheets("Reporte TL"), startColumn:=7, endColumn:=-1)
+        Call checkCoursesCompletion(exportWB.Sheets("Reporte SteerCo"), startColumn:=7, endColumn:=-1)
+
+        'Resumen: createSummary genera los 2 primeros cuadros (filas 2 y 10)
+        Call createSummary(curriculums, exportWB)
+
+        'Igual que en Health & Safety: cuadros 3 y 4 (filas 18 y 26) excluyendo Bajas/Desplazados.
+        'Si solo se quieren 2 cuadros en total, borrar estas 4 lineas.
+        Call createSummaryTable(18, exportWB.Sheets("Resumen"), exportWB.Sheets("Reporte TL"), CU_QES_TL)
+        Call createSummaryTable(26, exportWB.Sheets("Resumen"), exportWB.Sheets("Reporte SteerCo"), CU_QES_SC)
+
+        Call excludeInvisibleFromSummaryTable(exportWB, "Reporte TL", 18)
+        Call excludeInvisibleFromSummaryTable(exportWB, "Reporte SteerCo", 26)
+
+        fileName = "TAOA QES CU " & Application.WorksheetFunction.Text(Date, "mmm.dd.yyyy") & ".xlsx"
+
+        Call exportWorkbook(exportWB, NAME_QES, fileName)
+
+    End If
+
+    Set analizeFileCU_QES = exportWB
+
+End Function
+
+
+'==============================================================================
+' C) CAMBIOS EN FormCurriculums
+'==============================================================================
+
+' C1) En UserForm_Initialize, despues de "Health & Safety":
+'
+'       ComboBoxCurriculum.AddItem "Quality Essentials TL-SteerCo"
+'
+' C2) En Btn_Run_Click, bloque "EJECUTAR TODOS", despues del de Health & Safety:
+'
+'       FormProgress.labelProgressMessage = "Ejecutando curriculum Quality Essentials TL-SteerCo"
+'       Set auxWB = analizeFileCU_QES
+'       Call checkCloseWB(auxWB)
+'
+' C3) En Btn_Run_Click, dentro del Select Case individual, anadir:
+'
+'       Case "Quality Essentials TL-SteerCo":
+'           Set auxWB = analizeFileCU_QES
+'
+' (No hace falta tocar ComboBoxCurriculum_Change: entra por el Case Else.)
+
+
+'==============================================================================
+' D) HOJA "Ejecutar" DEL LIBRO DE LA MACRO
+'    Anadir DOS filas nuevas al final de la tabla de las columnas G, H, I
+'    (mapFolders lee desde la fila 2 hasta la ultima fila con datos en G).
+'
+'   Col G (nombre)                    Col H (carpeta origen)                Col I (carpeta exportado)
+'   Quality Essentials TL-SteerCo     <RUTA_BASE>                           <RUTA_BASE>\Informes
+'   My Team Quality Essentials        <RUTA_BASE>                           (vacio)
+'
+'   <RUTA_BASE> =
+'   \\Spi60001.eadscasa.casa.corp\a400m san pablo\Lean_Manufacturing\10.- PCM\28. PCM\0. Plan de Formación\ACTUAL YEAR\16- Quality Essentials
+'
+'   - El texto de la columna G debe coincidir EXACTO con NAME_QES y con learningKey.
+'   - La carpeta "Informes" debe existir: exportWorkbook ignora errores y, si no
+'     existe, el SaveAs falla sin avisar.
+'   - Para que exporte a "Informes" debe estar marcada la casilla de guardar en carpeta.
+'==============================================================================
