@@ -1,7 +1,7 @@
 Sub Main()
-    Call GenerarInformeCursoAviationSafety
+    Call GenerarInformeCursoJustFairAviationSafety
 End Sub
-Sub GenerarInformeCursoAviationSafety(Optional ByVal rutaCarpetaWbMyTeamAllLearning As String)
+Sub GenerarInformeCursoJustFairAviationSafety(Optional ByVal rutaCarpetaWbMyTeamAllLearning As String)
     ' Declaración de variables
     Dim libreriaModulos As Workbook
     Dim wbOrigenDataMyTeamAllLearning As Workbook
@@ -508,17 +508,17 @@ NextIteration:
     Dim rutaConNombreInforme As String
     Dim numeroArchivoConMismoNombre As Integer
     
-    rutaCarpetaDestinoInformes = ThisWorkbook.Path & "\Informes"
+    rutaCarpetaDestinoInformes = "\\Spi60001.eadscasa.casa.corp\a400m san pablo\Lean_Manufacturing\10.- PCM\28. PCM\0. Plan de Formación\ACTUAL YEAR\17 - J&F Aviation Safety\Informes"
     
-     'Si existe la carpeta Informes en la ruta donde está la macro, lo exportará ahí, si no, creará la carpeta Informes
+     'Si existe la carpeta Informes en la ruta de red indicada, lo exportará ahí, si no, creará la carpeta Informes
     If Dir(rutaCarpetaDestinoInformes, vbDirectory) = "" Then
         MkDir rutaCarpetaDestinoInformes
     End If
     
      'Exportar el informe con el nombre inicial correspondiente al curriculum de este código
-    nombreInforme = "Just & Fair " & Format(Date, "mmm.dd.yyyy")
+    nombreInforme = "Just & Fair Aviation Safety " & Format(Date, "mmm.dd.yyyy")
     extensionInforme = ".xlsx"
-    rutaCarpetaDestinoInformes = ThisWorkbook.Path & "\Informes\"
+    rutaCarpetaDestinoInformes = "\\Spi60001.eadscasa.casa.corp\a400m san pablo\Lean_Manufacturing\10.- PCM\28. PCM\0. Plan de Formación\ACTUAL YEAR\17 - J&F Aviation Safety\Informes\"
     rutaConNombreInforme = rutaCarpetaDestinoInformes & nombreInforme & extensionInforme
     numeroArchivoConMismoNombre = 0
     
@@ -528,7 +528,7 @@ NextIteration:
         rutaConNombreInforme = rutaCarpetaDestinoInformes & nombreInforme & " (" & numeroArchivoConMismoNombre & ")" & extensionInforme
     Loop
      
-    'Guardamos el libro con el nombre de la hoja y en la ruta que en el código hemos puesto (ruta raiz de la macro/Informes)
+    'Guardamos el libro con el nombre de la hoja y en la ruta que en el código hemos puesto (ruta de red 17 - J&F Aviation Safety/Informes)
     On Error Resume Next
     wbOrigenDataMyTeamAllLearning.Close SaveChanges:=False
     informeWB.SaveAs Filename:=rutaConNombreInforme, FileFormat:=xlOpenXMLWorkbook
@@ -547,7 +547,7 @@ NextIteration:
         If Not isDebugging Then
             wbMacroCurriculum.Close SaveChanges:=False
         End If
-        MsgBox ("Ejecución finalizada e informe guardado en la carpeta Informes que está en la carpeta de esta Macro")
+        MsgBox ("Ejecución finalizada e informe guardado en la carpeta Informes de J&F Aviation Safety")
     End If
 
 End Sub
@@ -626,5 +626,3 @@ Function AbrirArchivoMasRecientePorCreacion(rutaCarpeta As String, patronRegEx A
     Set carpeta = Nothing
     Set regex = Nothing
 End Function
-
-
