@@ -108,7 +108,7 @@ Private Sub Btn_Run_Click()
         Call checkCloseWB(auxWB)
         
         'Insertado 04/11
-        FormProgress.labelProgressMessage = "Ejecutando curriculum OnBoardingAviation Safety"
+        FormProgress.labelProgressMessage = "Ejecutando curriculum OnBoarding Aviation Safety"
         Set auxWB = analizeFileAS
         
         Set auxWB = Nothing
@@ -293,12 +293,12 @@ Private Sub Btn_Run_Click()
         rutaCarpetaWbFicheroFuenteOnBoardingAviationSafety = ThisWorkbook.Sheets("Ejecutar").Cells(15, "H").Value
         
         On Error Resume Next
-        Set auxWB = Workbooks("Macro Macro OnBoarding_Aviation_Safety.xlsm")
+        Set auxWB = Workbooks("Macro OnBoarding_Aviation_Safety.xlsm")
         On Error GoTo 0
     
         If auxWB Is Nothing Then
             On Error Resume Next ' Ignorar errores al abrir
-            Set auxWB = Workbooks.Open(rutaWbMacroAviationSafety)
+            Set auxWB = Workbooks.Open(rutaWbMacroOnBoardingAviationSafety)
             On Error GoTo 0 ' Volver a activar la gestión de errores
         End If
             
@@ -476,7 +476,8 @@ Private Sub Btn_Run_Click()
                         Set auxWB = Workbooks.Open(rutaWbMacroOnBoardingAviationSafety)
                         On Error GoTo 0 ' Volver a activar la gestión de errores
                     End If
-                        
+                        If auxWB Is Nothing Then
+
                     uselessAplicationVariable = Application.run("'Macro OnBoarding_Aviation_Safety.xlsm'!GenerarInformeCursoOnBoardingAviationSafety", rutaCarpetaWbFicheroFuenteOnBoardingAviationSafety)
                     
                     Set auxWB = Nothing
