@@ -1,0 +1,2771 @@
+Option Private Module
+
+Private Const NAME_HS = "Health & Safety"
+Private Const NAME_QE = "Quality Essentials"
+Private Const NAME_EC = "Export Control"
+Private Const NAME_TR = "Troubleshooting"
+Private Const NAME_DI = "Diisocianato"
+Private Const NAME_AS = "Assessment"
+Private Const NAME_TCO = "TCO"
+Private Const NAME_POA = "POA"
+Private Const NAME_QES = "Quality Essentials TL-SteerCo"
+Private Const CU_QES_TL = "CU-ADS-M-ALL-Quality Essentials for Team Leaders"
+Private Const CU_QES_SC = "CU-ADS-M-ALL-Quality Essentials for SteerCo"
+
+
+Public userIDsForTesting As Object
+Public userIDForTesting As String
+Public courseNameForTesting As String
+Public courseHeaderForTesting As String
+Public limitePersonasMostrar As Integer
+Public contadorPersonasMostradas As Integer
+
+Sub inicializarVariablesTesting()
+
+    courseNameForTesting = ""
+    courseHeaderForTesting = ""
+    
+    'Si vamos a hacer testing para unas personas concretas añadiremos las lineas y usaremos el diccionario donde lo necesitemos
+    Set userIDsForTesting = CreateObject("Scripting.Dictionary")
+    
+    'IMPORTANTE COMENTAR O QUITAR LAS LINEAS QUE AÑADEN IDS  AL DICCIONARIO PARA QUE LA MACRO PROCESE A TODO EL MUNDO
+    'userIDsForTesting.Add "289109", True
+    'userIDsForTesting.Add "286465", True
+    'userIDsForTesting.Add "434715", True
+    'userIDsForTesting.Add "434000", True
+    'userIDsForTesting.Add "419658", True
+    'userIDsForTesting.Add "386926", True
+    'userIDsForTesting.Add "426140", True
+    'userIDsForTesting.Add "386925", True
+    'userIDsForTesting.Add "389055", True
+    'userIDsForTesting.Add "324817", True
+    
+End Sub
+
+
+Sub CerrarLibrosExceptoEste()
+    
+    Dim wb As Workbook
+    
+    For Each wb In Workbooks
+    
+        If wb.name = "Curriculum_Details_23_56_32.xlsx" Or wb.name = "My Team All Learning_30_10_2024.xlsx" Then
+            wb.Close SaveChanges:=False
+        End If
+    
+    Next wb
+    
+End Sub
+Public Function analizeFileCU_HS() As Workbook
+
+    Dim importFilePath, fileName As String
+    Dim exportWB As Workbook
+    Dim curriculums, siglumDictionary, columnGroupsBC, columnGroupsWC As Dictionary
+    
+    'Hojas a separar
+    Set curriculums = New Dictionary
+    curriculums.Add "CU-AIG-H-SP-ALL-INI-RECORRIDO FORMATIVO H&S - Grupo 1: 24h", "Reporte BC"
+    curriculums.Add "CU-AIG-H-SP-ALL-INI-RECORRIDO FORMATIVO H&S - Grupo 4: 6h", "Reporte WC"
+    
+    'Grupos de columnas con las columnas que abarcan
+    'BC
+    Set columnGroupsBC = New Dictionary
+    columnGroupsBC.Add "Riesgos Puesto" & Chr(10) & "(debe realizar uno de los 2 cursos cada 5 años)", Array(7, 10)
+    columnGroupsBC.Add "Primeros auxilios" & Chr(10) & "(debe realizar uno  de los 2 cursos cada 5 años)", Array(11, 14)
+    columnGroupsBC.Add "Incendios" & Chr(10) & "(debe realizar el curso EPI First o Emergency Teams)", Array(15, 26)
+    columnGroupsBC.Add "ATEX" & Chr(10) & "(Caduca a los 5 años)", Array(27, 28)
+    columnGroupsBC.Add "Grúa" & Chr(10) & "(Caduca a los 5 años)", Array(29, 30)
+    columnGroupsBC.Add "PEMP" & Chr(10) & "(Caduca a los 5 años)", Array(31, 32)
+    columnGroupsBC.Add "Altura" & Chr(10) & "(Caduca a los 5 años)", Array(33, 34)
+    'WC
+    Set columnGroupsWC = New Dictionary
+    columnGroupsWC.Add "Riesgos Puesto", Array(7, 16)
+    
+    'Production path
+    importFilePath = getFilePath(NAME_HS, fileFilter:="Curriculum_Details*.xls*")
+    
+    'Development path
+    'importFilePath = "\\Spi60001.eadscasa.casa.corp\a400m san pablo\Lean_Manufacturing\10.- PCM\28. PCM\Development enviroment\Macros\Curriculums\CurriculumDetails\Curriculum_Details_23_56_32.xlsx"
+    
+    Application.ScreenUpdating = False
+    Application.DisplayAlerts = False
+    
+    If importFilePath <> "Falso" Then
+        
+        Set exportWB = Workbooks.Open(fileName:=importFilePath, ReadOnly:=False)
+        
+        exportWB.Sheets(1).Activate
+        
+        Set siglumDictionary = getSiglumDictionary()
+        
+        Call removeExtraRows(4)
+        
+        Call removeColumns(curriculum:=NAME_HS)
+        
+        Call insertColumn(name:="Siglum", position:=4)
+        
+        Call fillSiglumColumn(siglumDictionary, column:=4)
+        
+        Call splitCurriculums(curriculums)
+        
+        Call removeInactiveUsers(exportWB, "Employee ID")
+        
+        Call colorInactiveUsers(exportWB, "Employee ID")
+        
+        'Combinar columnas repetidas
+        Call combineColumns(exportWB.Sheets("Reporte WC"), 15, 17)
+        Call combineColumns(exportWB.Sheets("Reporte WC"), 16, 17)
+        
+        Call autofitColumns
+        
+        Call formatTable
+        
+        Call groupColumns(exportWB.Sheets("Reporte BC"), columnGroupsBC)
+        Call groupColumns(exportWB.Sheets("Reporte WC"), columnGroupsWC)
+        Call groupCourses(exportWB.Sheets("Reporte WC"), startColumn:=17, endColumn:=0)
+        
+        Call fillEmptyStatus(checkAllLearningFile:=True)
+        
+        Application.Wait Now + TimeValue("00:00:02")
+        
+        Call applyColorRules
+        
+        Application.Wait Now + TimeValue("00:00:02")
+        
+        Call colorExpiredDates
+        
+        Call checkGroupCompletion(exportWB.Sheets("Reporte BC"), columnGroupsBC)
+        
+        Call checkGroupCompletionEHS(exportWB.Sheets("Reporte WC"), columnGroupsWC, "Riesgos Puesto")
+        
+        Call checkCoursesCompletion(exportWB.Sheets("Reporte WC"), startColumn:=17, endColumn:=-1)
+        
+        Call checkRefresh(exportWB, "For. e Inf. de Riesgos P. Nuevo Ingreso - Status", "Training & Info on Risks in Work Place - Status")
+        
+        Call checkNotRequiredRiesgo(exportWB)
+        
+        Call checkNoDateRiesgo(exportWB)
+        Call checkNotRequired(exportWB.Sheets("Reporte BC"), "HELP AND FIRST AID - Status", "WORK FIRST-AID RESCUER Spain - Status")
+        
+        Call checkCurriculumCompletion
+        
+        Call highlightColumns(exportWB, NAME_HS)
+        
+        Call createSummary(curriculums, exportWB)
+        
+        Call createSummaryTable(18, exportWB.Sheets("Resumen"), exportWB.Sheets("Reporte BC"), "CU-AIG-H-SP-ALL-INI-RECORRIDO FORMATIVO H&S - Grupo 1: 24h")
+        Call createSummaryTable(26, exportWB.Sheets("Resumen"), exportWB.Sheets("Reporte WC"), "CU-AIG-H-SP-ALL-INI-RECORRIDO FORMATIVO H&S - Grupo 4: 6h")
+        
+        Call excludeInvisibleFromSummaryTable(exportWB, "Reporte BC", 18)
+        Call excludeInvisibleFromSummaryTable(exportWB, "Reporte WC", 26)
+        
+        fileName = "TAOA H&S CU " & Application.WorksheetFunction.Text(Date, "mmm.dd.yyyy") & ".xlsx"
+        
+        Call exportWorkbook(exportWB, NAME_HS, fileName)
+        
+    End If
+    
+    Set analizeFileCU_HS = exportWB
+    
+End Function
+
+
+Public Function analizeFileCU_QES() As Workbook
+
+    Dim importFilePath, fileName As String
+    Dim exportWB As Workbook
+    Dim curriculums, siglumDictionary As Dictionary
+
+    'Hojas a separar
+    Set curriculums = New Dictionary
+    curriculums.Add CU_QES_TL, "Reporte TL"
+    curriculums.Add CU_QES_SC, "Reporte SteerCo"
+
+    'Fichero Curriculum_Details (el mas reciente de la carpeta de la fila de Ejecutar)
+    importFilePath = getFilePath(NAME_QES, fileFilter:="Curriculum_Details*.xls*")
+
+    Application.ScreenUpdating = False
+    Application.DisplayAlerts = False
+
+    If importFilePath <> "Falso" Then
+
+        Set exportWB = Workbooks.Open(fileName:=importFilePath, ReadOnly:=False)
+
+        exportWB.Sheets(1).Activate
+
+        Set siglumDictionary = getSiglumDictionary()
+
+        Call removeExtraRows
+
+        Call removeColumns(curriculum:=NAME_QES)
+
+        Call insertColumn(name:="Siglum", position:=4)
+
+        Call fillSiglumColumn(siglumDictionary, column:=4)
+
+        Call splitCurriculums(curriculums)
+
+        Call removeInactiveUsers(exportWB, "Employee ID")
+
+        Call colorInactiveUsers(exportWB, "Employee ID")
+
+        Call autofitColumns
+
+        Call formatTable
+
+        'Cursos de 2 en 2 columnas (Status / Completion date), desde la columna 7
+        Call groupCourses(exportWB.Sheets("Reporte TL"), startColumn:=7, endColumn:=0)
+        Call groupCourses(exportWB.Sheets("Reporte SteerCo"), startColumn:=7, endColumn:=0)
+
+        'Rellena estados vacios/caducados desde "My team Quality essential.xlsx"
+        Call fillEmptyStatus(checkAllLearningFile:=True, _
+                             learningKey:="My Team Quality Essentials", _
+                             learningFilter:="My team Quality essential*.xls*")
+
+        Application.Wait Now + TimeValue("00:00:02")
+
+        Call applyColorRules
+
+        Application.Wait Now + TimeValue("00:00:02")
+
+        Call colorExpiredDates
+
+        Call checkCurriculumCompletion
+
+        Call checkCoursesCompletion(exportWB.Sheets("Reporte TL"), startColumn:=7, endColumn:=-1)
+        Call checkCoursesCompletion(exportWB.Sheets("Reporte SteerCo"), startColumn:=7, endColumn:=-1)
+
+        'Resumen: createSummary genera los 2 primeros cuadros (filas 2 y 10)
+        Call createSummary(curriculums, exportWB)
+
+        'Igual que en Health & Safety: cuadros 3 y 4 (filas 18 y 26) excluyendo Bajas/Desplazados.
+        'Si solo se quieren 2 cuadros en total, borrar estas 4 lineas.
+        Call createSummaryTable(18, exportWB.Sheets("Resumen"), exportWB.Sheets("Reporte TL"), CU_QES_TL)
+        Call createSummaryTable(26, exportWB.Sheets("Resumen"), exportWB.Sheets("Reporte SteerCo"), CU_QES_SC)
+
+        Call excludeInvisibleFromSummaryTable(exportWB, "Reporte TL", 18)
+        Call excludeInvisibleFromSummaryTable(exportWB, "Reporte SteerCo", 26)
+
+        fileName = "TAOA QES CU " & Application.WorksheetFunction.Text(Date, "mmm.dd.yyyy") & ".xlsx"
+
+        Call exportWorkbook(exportWB, NAME_QES, fileName)
+
+    End If
+
+    Set analizeFileCU_QES = exportWB
+
+End Function
+
+
+
+'---@@@@@@@@@@@@@@@@@@@
+
+Public Function analizeFileTCO() As Workbook
+    Dim importFilePath, fileName As String
+    Dim exportWB As Workbook
+    Dim curriculums, siglumDictionary, columnGroupsBC, columnGroupsWC As Dictionary
+    
+    'Hojas a separar
+    Set curriculums = New Dictionary
+    curriculums.Add "TCO Curriculum 2026 - Mandatory to Complete", "Reporte"
+    
+    importFilePath = getFilePath(NAME_TCO, fileFilter:="Curriculum_Details*.xls*")
+    
+    Application.ScreenUpdating = False
+    Application.DisplayAlerts = False
+    
+    If importFilePath <> "Falso" Then
+        Set exportWB = Workbooks.Open(fileName:=importFilePath, ReadOnly:=False)
+        exportWB.Sheets(1).Activate
+        
+        Set siglumDictionary = getSiglumDictionary()
+        
+        Call removeExtraRows
+        
+        Call removeColumns(curriculum:=NAME_TCO)
+        
+        Call insertColumn(name:="Siglum", position:=4)
+        
+        Call fillSiglumColumn(siglumDictionary, column:=4)
+        
+        Call splitCurriculums(curriculums)
+        
+        Call removeInactiveUsers(exportWB, "Employee ID")
+        
+        Call colorInactiveUsers(exportWB, "Employee ID")
+        
+        Call autofitColumns
+        
+        Call applyColorRules
+        
+        Call formatTable
+        
+        Call checkCurriculumCompletion
+        
+        Call fillEmptyStatus(checkAllLearningFile:=False)
+        
+        Call colorExpiredDates
+        
+        Call createSummary(curriculums, exportWB)
+        
+        fileName = "TAOA TCO " & Application.WorksheetFunction.Text(Date, "mmm.dd.yyyy") & ".xlsx"
+        Call exportWorkbook(exportWB, NAME_TCO, fileName)
+    End If
+    Set analizeFileTCO = exportWB
+End Function
+
+Public Function analizeFilePOA() As Workbook
+    Dim importFilePath, fileName As String
+    Dim exportWB As Workbook
+    Dim curriculums, siglumDictionary, columnGroupsBC, columnGroupsWC As Dictionary
+    
+    'Hojas a separar
+    Set curriculums = New Dictionary
+    curriculums.Add "CU-ADS-POA-ALL", "Reporte"
+    
+    importFilePath = getFilePath(NAME_POA, fileFilter:="Curriculum_Details*.xls*")
+    
+    Application.ScreenUpdating = False
+    Application.DisplayAlerts = False
+    
+    If importFilePath <> "Falso" Then
+        Set exportWB = Workbooks.Open(fileName:=importFilePath, ReadOnly:=False)
+        exportWB.Sheets(1).Activate
+        
+        Set siglumDictionary = getSiglumDictionary()
+        
+        Call removeExtraRows
+        
+        Call removeColumns(curriculum:=NAME_POA)
+        
+        Call insertColumn(name:="Siglum", position:=4)
+        
+        Call fillSiglumColumn(siglumDictionary, column:=4)
+        
+        Call splitCurriculums(curriculums)
+        
+        Call removeInactiveUsers(exportWB, "Employee ID")
+        
+        Call colorInactiveUsers(exportWB, "Employee ID")
+        
+        Call autofitColumns
+        
+        Call applyColorRules
+        
+        Call formatTable
+        
+        Call checkCurriculumCompletion
+        
+        Call fillEmptyStatus(checkAllLearningFile:=False)
+        
+        Call colorExpiredDates
+        
+        Call createSummary(curriculums, exportWB)
+        
+        fileName = "TAOA POA CU " & Application.WorksheetFunction.Text(Date, "mmm.dd.yyyy") & ".xlsx"
+        Call exportWorkbook(exportWB, NAME_POA, fileName)
+    End If
+    Set analizeFilePOA = exportWB
+End Function
+
+
+Public Function analizeFileCU_QE() As Workbook
+    Dim importFilePath, fileName As String
+    Dim exportWB As Workbook
+    Dim curriculums, siglumDictionary As Dictionary
+    
+    'Hojas a separar
+    Set curriculums = New Dictionary
+    curriculums.Add "CU-ADS-M-ALL-Quality Essentials for Blue Collars", "Reporte BC"
+    curriculums.Add "CU-ADS-M-ALL-Quality Essentials for Team Leaders", "Reporte WC"
+       
+    importFilePath = getFilePath(NAME_QE, fileFilter:="Curriculum_Details*.xls*")
+    
+    Application.ScreenUpdating = False
+    Application.DisplayAlerts = False
+    
+    If importFilePath <> "Falso" Then
+        Set exportWB = Workbooks.Open(fileName:=importFilePath, ReadOnly:=False)
+        exportWB.Sheets(1).Activate
+        
+        Set siglumDictionary = getSiglumDictionary()
+        
+        Call removeExtraRows
+        
+        Call removeColumns(curriculum:=NAME_QE)
+        
+        Call insertColumn(name:="Siglum", position:=4)
+        
+        Call fillSiglumColumn(siglumDictionary, column:=4)
+        
+        Call splitCurriculums(curriculums)
+        
+        Call removeInactiveUsers(exportWB, "Employee ID")
+        
+        Call colorInactiveUsers(exportWB, "Employee ID")
+        
+        Call autofitColumns
+        
+        Call applyColorRules
+        
+        Call formatTable
+
+        Call groupCourses(Sheets("Reporte BC"), startColumn:=7, endColumn:=0)
+        Call groupCourses(Sheets("Reporte WC"), startColumn:=7, endColumn:=0)
+        
+        Call fillEmptyStatus(checkAllLearningFile:=True)
+        
+        Call checkCurriculumCompletion
+        
+        Call checkCoursesCompletion(Sheets("Reporte BC"), 7, 0)
+        Call checkCoursesCompletion(Sheets("Reporte WC"), 7, 0)
+        
+        Call createSummary(curriculums, exportWB)
+        
+        fileName = "TAOA QE CU " & Application.WorksheetFunction.Text(Date, "mmm.dd.yyyy") & ".xlsx"
+        Call exportWorkbook(exportWB, NAME_QE, fileName)
+    End If
+    Set analizeFileCU_QE = exportWB
+End Function
+
+Public Function analizeFileCU_EC() As Workbook
+    Dim importFilePath, fileName, year As String
+    Dim exportWB As Workbook
+    Dim curriculums, siglumDictionary As Dictionary
+    
+    'Hojas a separar
+    Set curriculums = New Dictionary
+    
+    year = "2024"
+    curriculums.Add "Export Control curriculum for " & year & " exposed employees", "Reporte"
+    
+    importFilePath = getFilePath(NAME_EC, fileFilter:="Curriculum_Details*.xls*")
+    
+    Application.ScreenUpdating = False
+    Application.DisplayAlerts = False
+    
+    If importFilePath <> "Falso" Then
+        Set exportWB = Workbooks.Open(fileName:=importFilePath, ReadOnly:=False)
+        exportWB.Sheets(1).Activate
+        
+        Set siglumDictionary = getSiglumDictionary()
+        
+        Call removeExtraRows
+        
+        Call removeColumns(curriculum:=NAME_EC)
+        
+        Call insertColumn(name:="Siglum", position:=4)
+        
+        Call fillSiglumColumn(siglumDictionary, column:=4)
+        
+        Call filterAndRemoveRows(column:="Curriculum Status", filter:="Old Version", inclusive:=True)
+        
+        Call splitCurriculums(curriculums)
+        
+        Call removeInactiveUsers(exportWB, "Employee ID")
+        
+        Call colorInactiveUsers(exportWB, "Employee ID")
+        
+        Call autofitColumns
+        
+        Call applyColorRules
+        
+        Call formatTable
+
+        Call groupCourses(Sheets("Reporte"), startColumn:=7, endColumn:=0)
+        
+        Call fillEmptyStatus(checkAllLearningFile:=True)
+        
+        Call checkCurriculumCompletion
+        
+        Call checkCoursesCompletion(Sheets("Reporte"), 7, 0)
+        
+        Call createSummary(curriculums, exportWB)
+        
+        fileName = "TAOA EC CU " & Application.WorksheetFunction.Text(Date, "mmm.dd.yyyy") & ".xlsx"
+        Call exportWorkbook(exportWB, NAME_EC, fileName)
+    End If
+    Set analizeFileCU_EC = exportWB
+End Function
+
+Public Function analizeFileTroubleshooting() As Workbook
+    Dim importFilePath, fileName, course, year As String
+    Dim siglumsFilter
+    Dim exportWB As Workbook
+    Dim curriculums, siglumDictionary As Dictionary
+    
+    course = "Troubleshooting process Awareness Session (video)"
+    siglumsFilter = Array("TAOA")
+    
+    'Hojas a separar
+    Set curriculums = New Dictionary
+    curriculums.Add course, "Reporte"
+    
+    'year = ThisWorkbook.Sheets("Ejecutar").Cells(1, 7).value
+    importFilePath = getFilePath(NAME_TR, fileFilter:="My_Team_All_Learning_is_on_or_after_2023*.xls*")
+    
+    Application.ScreenUpdating = False
+    Application.DisplayAlerts = False
+    
+    If importFilePath <> "Falso" Then
+        Set exportWB = Workbooks.Open(fileName:=importFilePath, ReadOnly:=False)
+        exportWB.Sheets(1).Activate
+        exportWB.Sheets(1).name = "Reporte"
+        
+        Call insertCourseRow(course)
+        
+        Call removeColumns(curriculum:=NAME_TR)
+        
+        Call filterAndRemoveRows(column:="Training - Training title", filter:=course, inclusive:=False)
+        Call filterArrayAndRemoveRows(column:="User - Supervisory", filter:=siglumsFilter)
+        
+        Call removeInactiveUsers(exportWB, "User - User ID")
+        
+        Call colorInactiveUsers(exportWB, "User - User ID")
+        
+        Call autofitColumns
+        
+        Call applyColorRules
+        
+        Call formatTable
+        
+        Call createSummaryTableAllLearning(course)
+        
+        fileName = "TAOA Troubleshooting " & Application.WorksheetFunction.Text(Date, "mmm.dd.yyyy") & ".xlsx"
+        Call exportWorkbook(exportWB, NAME_TR, fileName)
+    End If
+    Set analizeFileTroubleshooting = exportWB
+End Function
+
+Public Function analizeFileDiisocianato() As Workbook
+    Dim importFilePath, fileName, course, year As String
+    Dim siglumsFilter
+    Dim exportWB As Workbook
+    Dim curriculums, siglumDictionary As Dictionary
+    
+    course = "Chemical Risk: Focus on Diisocyanates"
+    siglumsFilter = Array("TAOA")
+    
+    'Hojas a separar
+    Set curriculums = New Dictionary
+    curriculums.Add course, "Reporte"
+    
+    year = ThisWorkbook.Sheets("Ejecutar").Cells(1, 7).Value
+    importFilePath = getFilePath(NAME_TR, fileFilter:="My_Team_All_Learning_is_on_or_after_2023*.xls*")
+    
+    Application.ScreenUpdating = False
+    Application.DisplayAlerts = False
+    
+    If importFilePath <> "Falso" Then
+        Set exportWB = Workbooks.Open(fileName:=importFilePath, ReadOnly:=False)
+        exportWB.Sheets(1).Activate
+        exportWB.Sheets(1).name = "Reporte"
+        
+        Call insertCourseRow(course)
+        
+        Call removeColumns(curriculum:=NAME_DI)
+        
+        Call filterAndRemoveRows(column:="Training - Training title", filter:=course, inclusive:=False)
+        Call filterArrayAndRemoveRows(column:="User - Supervisory", filter:=siglumsFilter)
+        
+        Call removeInactiveUsers(exportWB, "User - User ID")
+        
+        Call colorInactiveUsers(exportWB, "User - User ID")
+        
+        Call autofitColumns
+        
+        Call applyColorRules
+        
+        Call formatTable
+        
+        Call createSummaryTableAllLearning(course)
+        
+        fileName = "TAOA Diisocianatos " & Application.WorksheetFunction.Text(Date, "mmm.dd.yyyy") & ".xlsx"
+        Call exportWorkbook(exportWB, NAME_DI, fileName)
+    End If
+    Set analizeFileDiisocianato = exportWB
+End Function
+
+Public Function analizeFileAssessment() As Workbook
+    Dim importFilePath, fileName, course, year As String
+    Dim siglumsFilter
+    Dim exportWB As Workbook
+    Dim curriculums, siglumDictionary As Dictionary
+
+    course = NAME_AS
+    siglumsFilter = Array("TAOA")
+
+    'Hojas a separar
+    Set curriculums = New Dictionary
+    curriculums.Add course, "Reporte"
+
+    importFilePath = getFilePath(NAME_AS, fileFilter:="Details*")
+
+    Application.ScreenUpdating = False
+    Application.DisplayAlerts = False
+
+    If importFilePath <> "Falso" Then
+        Set exportWB = Workbooks.Open(fileName:=importFilePath, ReadOnly:=False)
+        exportWB.Sheets(1).Activate
+        exportWB.Sheets(1).name = "Reporte"
+ 
+        Call insertCourseRow(course)
+
+        Call removeColumns(curriculum:=NAME_AS)
+
+        Call filterArrayAndRemoveRows(column:="Siglum", filter:=siglumsFilter)
+        
+        Call removeInactiveUsers(exportWB, "Employee ID")
+        
+        Call colorInactiveUsers(exportWB, "Employee ID")
+
+        Call autofitColumns
+
+        Call applyColorToAssessment
+        
+        Call sortTable(NAME_AS)
+
+        Call formatTable
+
+        Call createSummaryTableAssessment(NAME_AS)
+
+        fileName = "TAOA Assessment " & Application.WorksheetFunction.Text(Date, "mmm.dd.yyyy") & ".xlsx"
+        Call exportWorkbook(exportWB, NAME_AS, fileName)
+    End If
+    Set analizeFileAssessment = exportWB
+End Function
+
+' Función que obtiene el fichero más reciente de una carpeta con un patrón de nombre específico
+'   y lo pide al usuario si no encuentra coincidencias.
+Public Function getFilePath(ByVal curriculum As String, ByVal fileFilter As String) As String
+    Dim folderDictionary As Dictionary
+    Dim importFilePath As String
+
+    Set folderDictionary = mapFolders
+    importFilePath = openMostRecentWorkbook(folderPath:=folderDictionary(curriculum)(0), fileFilter:=fileFilter)
+    
+    If importFilePath = "" Then
+        importFilePath = getFilefromUser(curriculum)
+    End If
+    
+    'Production
+    getFilePath = importFilePath
+    
+    'Development
+    'getFilePath = "\\Spi60001.eadscasa.casa.corp\a400m san pablo\Lean_Manufacturing\10.- PCM\28. PCM\Development enviroment\Macros\Curriculums\myTeamAllLearning\My Team All Learning_30_10_2024.xlsx"
+
+End Function
+
+' Función que pide un fichero al usuario mediante ventana emergente.
+Private Function getFilefromUser(ByVal titleString As String) As String
+    Dim selectedFile As Variant
+    ' Mostrar el cuadro de diálogo "Abrir archivo"
+    selectedFile = Application.GetOpenFilename(fileFilter:="Archivos Excel (*.xls; *.xlsx), *.xls; *.xlsx", Title:="Fichero " & titleString)
+    getFilefromUser = selectedFile
+End Function
+
+' Método que elimina las primeras y últimas filas del documento activo.
+Private Sub removeExtraRows(Optional ByVal rowsToDelete As Long = 3)
+    Dim lastDataRow, lastRow As Integer
+    Rows("1:" & rowsToDelete).Delete
+    
+    lastDataRow = Cells(1, 1).End(xlDown).row
+    lastRow = Cells(Rows.Count, 1).End(xlUp).row
+    
+    Rows(lastDataRow + 1 & ":" & lastRow).Delete
+End Sub
+
+' Método que elimina las columnas definidas según el curriculum
+Private Sub removeColumns(ByVal curriculum As String)
+    Select Case curriculum
+        Case NAME_HS, NAME_QE, NAME_EC, NAME_POA, NAME_QES
+            Call removeColumnByName("Hire Date")
+            Call removeColumnByName("User Email")
+            Call removeColumnByName("Registration Number")
+            Call removeColumnByName("Curriculum Completion Totals (total number of items completed)")
+        Case NAME_TR, NAME_DI
+            Call removeColumnByName("Training - Training type")
+            Call removeColumnByName("Training - Material type name")
+            Call removeColumnByName("Training - Classroom session ID number")
+            Call removeColumnByName("Training - Training starting date")
+            Call removeColumnByName("Training record - Passed")
+            Call removeColumnByName("Training record - Curriculum title (training record)")
+            Call removeColumnByName("Training record - Curriculum version (training record)")
+            Call removeColumnByName("Training - Training topic")
+            Call removeColumnByName("Training - Training hours")
+            Call removeColumnByName("Training - Training price")
+            Call removeColumnByName("Training record - Last training record status change date")
+            Call removeColumnByName("Training - Training end date")
+        Case NAME_AS
+            Call removeColumnByName("Employee's email")
+            Call removeColumnByName("AWF")
+            Call removeColumnByName("Division")
+            Call removeColumnByName("Core Division")
+            Call removeColumnByName("Company")
+            Call removeColumnByName("Country")
+            Call removeColumnByName("Location")
+            Call removeColumnByName("Supervisory Organisation")
+            Call removeColumnByName("Date last change of Job profile")
+            Call removeColumnByName("Assessment initiation Date")
+            Call removeColumnByName("Job Criticality")
+            Call removeColumnByName("POA Job")
+            Call removeColumnByName("MyHR/QA Scope")
+            Call removeColumnByName("Job Profile")
+        Case NAME_HS, NAME_QE, NAME_EC, NAME_TCO
+            Call removeColumnByName("Hire Date")
+            Call removeColumnByName("User Email")
+            Call removeColumnByName("Registration Number")
+            Call removeColumnByName("Curriculum Completion Totals (total number of items completed)")
+    End Select
+End Sub
+
+' Método que elimina una columna por nombre en el documento activo.
+Private Sub removeColumnByName(ByVal header As String)
+    Dim rngHeader As Range
+    
+    Set rngHeader = Rows(2).Find(header, LookIn:=xlValues, LookAt:=xlWhole)
+    
+    If Not rngHeader Is Nothing Then
+        Columns(rngHeader.column).Delete
+    End If
+End Sub
+
+' Método que elimina todas las columnas a la derecha de la columna indicada.
+Private Sub removeColumnsToRight(ByVal startColumn As Integer)
+    Dim lastColumn As Long
+    Dim i As Long
+    
+    lastColumn = ActiveSheet.Cells(2, Columns.Count).End(xlToLeft).column
+    
+    For i = lastColumn To startColumn Step -1
+        Columns(i).Delete
+    Next i
+End Sub
+
+' Método que inserta una columna en la posición indicada.
+Private Sub insertColumn(name As String, position As Integer)
+    Dim headerRow
+    Columns(position).Insert Shift:=xlToRight
+    
+    headerRow = 2
+    While (Cells(headerRow, 1).Value <> "")
+        Cells(headerRow, position).Value = name
+        headerRow = Cells(headerRow, 2).End(xlDown).row + 2
+    Wend
+End Sub
+
+' Función que obtiene un diccionario de los siglums por responsable de la hoja "Siglums"
+'   (key: Responsable, item: Siglum)
+Private Function getSiglumDictionary() As Dictionary
+    Dim Auxdictionary As Dictionary
+    Dim lastRow, i As Integer
+    
+    Set Auxdictionary = New Dictionary
+    
+    With ThisWorkbook.Sheets("Siglums")
+        lastRow = .Cells(1, 1).End(xlDown).row
+        
+        For i = 2 To lastRow
+            Auxdictionary.Add UCase(.Cells(i, 1).Value), .Cells(i, 2).Value
+        Next i
+    End With
+    
+    Set getSiglumDictionary = Auxdictionary
+End Function
+
+' Function which creates a dictionary of all users who should appear in red in the final report
+Private Function getInvisibleUsersDictionary() As Dictionary
+    Dim inactiveVisibleList As Dictionary
+    Dim lastRow, userIDCol, i, invisibleCol As Integer
+    
+    Set inactiveVisibleList = New Dictionary
+    
+    With ThisWorkbook.Sheets("Usuarios_Inactivos")
+        userIDCol = .Rows(1).Find(What:="ID Usuario", LookIn:=xlValues, LookAt:=xlWhole).column
+        invisibleCol = .Rows(1).Find(What:="Invisible", LookIn:=xlValues, LookAt:=xlWhole).column
+        lastRow = .Cells(.Rows.Count, userIDCol).End(xlUp).row
+        
+        For i = 2 To lastRow
+            If Not inactiveVisibleList.Exists(.Cells(i, userIDCol).Value) Then
+                If .Cells(i, invisibleCol).Value = "No" Then
+                    inactiveVisibleList.Add CStr(.Cells(i, userIDCol).Value), True
+                End If
+            End If
+        Next i
+    End With
+    
+    
+    Set getInvisibleUsersDictionary = inactiveVisibleList
+End Function
+
+' Function which creates a dictionary of all siglums and an initial value of 0
+' This will later store the count of 'invisible' users per siglum
+Private Function getEmptySiglumsDictionary() As Dictionary
+    Dim Auxdictionary As Dictionary
+    Dim lastRow, i As Integer
+    
+    Set Auxdictionary = New Dictionary
+    
+    With ThisWorkbook.Sheets("Siglums")
+        Auxdictionary.Add "Not assigned", 0
+        
+        lastRow = .Cells(1, 1).End(xlDown).row
+        
+        For i = 2 To lastRow
+            If Not Auxdictionary.Exists(.Cells(i, 2).Value) Then
+                Auxdictionary.Add .Cells(i, 2).Value, 0
+            End If
+        Next i
+    End With
+    
+    
+    Set getEmptySiglumsDictionary = Auxdictionary
+End Function
+
+' Function which creates a dictionary of all the sigmlums and the count of the 'invisible' users (users with 'no' in the Invisible column of the Usuarios_Inactivos tab).
+' These counts will be used in the Resumen tab to create the summary table excluding invisible users.
+'   (key: Siglum, item: Count)
+Private Function getSiglumInvisibleCountDictionary(ByVal ws As Worksheet, ByVal IDColumn As String, ByVal completed As Boolean) As Dictionary
+    Dim siglumCountDictionary, invisibleUserDictionary As Dictionary
+    Dim lastRow, userIDCol, curriculumCol, i, invisibleCol As Integer
+    Dim curriculumStatus As String
+    
+    Set siglumCountDictionary = getEmptySiglumsDictionary()
+    Set invisibleUserDictionary = getInvisibleUsersDictionary()
+    
+    With ws
+        userIDCol = .Rows(2).Find(What:=IDColumn, LookIn:=xlValues, LookAt:=xlWhole).column
+        curriculumCol = .Rows(2).Find(What:="Curriculum Status", LookIn:=xlValues, LookAt:=xlWhole).column
+        lastRow = .Cells(.Rows.Count, 1).End(xlUp).row
+        Dim siglum As String
+            
+        For i = lastRow To 2 Step -1
+            If invisibleUserDictionary.Exists(CStr(.Cells(i, userIDCol).Value)) Then
+                siglum = .Cells(i, userIDCol + 1).Value
+                If completed = False Then
+                    If siglum <> "" And siglumCountDictionary.Exists(siglum) Then
+                        siglumCountDictionary(siglum) = siglumCountDictionary(siglum) + 1
+                    Else
+                        siglumCountDictionary("Not assigned") = siglumCountDictionary("Not assigned") + 1
+                    End If
+                Else
+                    curriculumStatus = CStr(.Cells(i, curriculumCol).Value)
+                    If curriculumStatus = "Completed" Or curriculumStatus = "Exempt" Or curriculumStatus = "Completed (Equivalent)" Or curriculumStatus = "Completed (Refresh)" Then
+                        If siglum <> "" And siglumCountDictionary.Exists(siglum) Then
+                            siglumCountDictionary(siglum) = siglumCountDictionary(siglum) + 1
+                        Else
+                            siglumCountDictionary("Not assigned") = siglumCountDictionary("Not assigned") + 1
+                        End If
+                    End If
+                End If
+            End If
+        Next i
+    End With
+    
+    Set getSiglumInvisibleCountDictionary = siglumCountDictionary
+End Function
+
+' Método que rellena la columna Siglum del documento a exportar usando el diccionario de siglums.
+Private Sub fillSiglumColumn(ByVal siglumDictionary As Dictionary, column As Integer)
+    Dim lastRow, i
+    
+    lastRow = Cells(Rows.Count, 1).End(xlUp).row
+    
+    For i = 3 To lastRow
+        If (siglumDictionary.Exists(UCase(Cells(i, 5).Value))) Then
+            Cells(i, 4).Value = siglumDictionary(UCase(Cells(i, 5).Value))
+        End If
+    Next i
+End Sub
+
+' Método que separa los datos en una serie de hojas, una para cada curriculum definido.
+Private Sub splitCurriculums(ByVal curriculums As Dictionary)
+    Dim i, firstTableRow, lastTableRow, lastColumn As Integer
+    Dim newSheet As Worksheet
+    
+    For Each curriculum In curriculums.Keys
+        Sheets(1).Activate
+        'Si has llegado aquí por que te ha dado error, comprueba que no hayan abiertos libros que abre la macro de antes de ejecutar
+        firstTableRow = Columns(1).Find(What:=curriculum, LookIn:=xlValues, LookAt:=xlWhole).row + 1
+        lastTableRow = Cells(firstTableRow, 2).End(xlDown).row
+        lastColumn = Cells(firstTableRow, Columns.Count).End(xlToLeft).column
+        
+        Sheets(1).Range(Cells(firstTableRow, 1), Cells(lastTableRow, lastColumn)).Copy
+        
+        Set newSheet = ActiveWorkbook.Worksheets.Add(After:=Sheets(Sheets.Count))
+        newSheet.Range(Cells(2, 1), Cells(lastTableRow - firstTableRow + 1, lastColumn)).PasteSpecial xlPasteAll
+        
+        newSheet.Range(Cells(2, 1), Cells(2, lastColumn)).AutoFilter
+        
+        newSheet.name = curriculums(curriculum)
+        newSheet.Columns.AutoFit
+        newSheet.Cells(1, 1).Value = curriculum
+        newSheet.Cells(2, 1).Select
+        
+        ' Eliminar filas donde la columna D no comienza por "TAOAA", "TAOAT" o "TAOAF"
+        If newSheet.name = "Reporte BC" Then
+        Dim row As Long
+        For row = newSheet.Cells(newSheet.Rows.Count, 4).End(xlUp).row To 3 Step -1
+            If Not (Left(newSheet.Cells(row, 4).Value, 5) = "TAOAA" Or Left(newSheet.Cells(row, 4).Value, 5) = "TAOAT" Or Left(newSheet.Cells(row, 4).Value, 5) = "TAOAF") Then
+                newSheet.Rows(row).Delete
+            End If
+        Next row
+        End If
+        
+    Next curriculum
+    
+    ActiveWorkbook.Sheets(1).Delete
+    ActiveWorkbook.Sheets(1).Activate
+End Sub
+
+' Método que elimina los usuarios inactivos definidos en la hoja "Usuarios_Inactivos" del documento a exportar.
+Private Sub removeInactiveUsers(ByVal exportWB As Workbook, ByVal IDColumn As String)
+    Dim inactiveList As Dictionary
+    Dim lastRow, lastCol, userIDCol, i, invisibleCol As Integer
+    Dim sht As Worksheet
+    
+    Set inactiveList = New Dictionary
+    
+    With ThisWorkbook.Sheets("Usuarios_Inactivos")
+        userIDCol = .Rows(1).Find(What:="ID Usuario", LookIn:=xlValues, LookAt:=xlWhole).column
+        invisibleCol = .Rows(1).Find(What:="Invisible", LookIn:=xlValues, LookAt:=xlWhole).column
+        lastRow = .Cells(.Rows.Count, userIDCol).End(xlUp).row
+        
+        For i = 2 To lastRow
+            If Not inactiveList.Exists(.Cells(i, userIDCol).Value) Then
+                If .Cells(i, invisibleCol).Value = "Si" Then
+                    inactiveList.Add CStr(.Cells(i, userIDCol).Value), True
+                End If
+            End If
+        Next i
+        
+    End With
+    
+    For Each sht In exportWB.Sheets
+        userIDCol = sht.Rows(2).Find(What:=IDColumn, LookIn:=xlValues, LookAt:=xlWhole).column
+        lastRow = sht.Cells(sht.Rows.Count, 1).End(xlUp).row
+        lastCol = sht.Cells(2, sht.Columns.Count).End(xlToLeft).column
+        
+        For i = lastRow To 2 Step -1
+            If inactiveList.Exists(CStr(sht.Cells(i, userIDCol).Value)) Then
+                sht.Cells(i, userIDCol).EntireRow.Delete
+            End If
+        Next i
+    Next
+
+End Sub
+
+' Function that colours users' names in red in the final report if they are listed in the Usuarios_Inactivos tab with 'No' in the Invisible column.
+Private Sub colorInactiveUsers(ByVal exportWB As Workbook, ByVal IDColumn As String)
+    Dim inactiveVisibleList As Dictionary
+    Dim lastRow, lastCol, userIDCol, i, invisibleCol As Integer
+    Dim sht As Worksheet
+    
+    Set inactiveVisibleList = New Dictionary
+    
+    With ThisWorkbook.Sheets("Usuarios_Inactivos")
+        userIDCol = .Rows(1).Find(What:="ID Usuario", LookIn:=xlValues, LookAt:=xlWhole).column
+        invisibleCol = .Rows(1).Find(What:="Invisible", LookIn:=xlValues, LookAt:=xlWhole).column
+        lastRow = .Cells(.Rows.Count, userIDCol).End(xlUp).row
+        
+        For i = 2 To lastRow
+            If Not inactiveVisibleList.Exists(.Cells(i, userIDCol).Value) Then
+                If .Cells(i, invisibleCol).Value = "No" Then
+                    inactiveVisibleList.Add CStr(.Cells(i, userIDCol).Value), True
+                End If
+            End If
+        Next i
+        
+    End With
+    
+    For Each sht In exportWB.Sheets
+        userIDCol = sht.Rows(2).Find(What:=IDColumn, LookIn:=xlValues, LookAt:=xlWhole).column
+        lastRow = sht.Cells(sht.Rows.Count, 1).End(xlUp).row
+        lastCol = sht.Cells(2, sht.Columns.Count).End(xlToLeft).column
+        
+        For i = lastRow To 2 Step -1
+            If inactiveVisibleList.Exists(CStr(sht.Cells(i, userIDCol).Value)) Then
+                
+                Select Case FormCurriculums.ComboBoxCurriculum.Value
+                    Case "Health & Safety":
+                        sht.Cells(i, 1).Font.Color = RGB(255, 0, 0)
+                        sht.Cells(i, 2).Font.Color = RGB(255, 0, 0)
+                    Case "Quality Essentials":
+                        sht.Cells(i, 1).Font.Color = RGB(255, 0, 0)
+                        sht.Cells(i, 2).Font.Color = RGB(255, 0, 0)
+                    Case "Export Control":
+                        sht.Cells(i, 1).Font.Color = RGB(255, 0, 0)
+                        sht.Cells(i, 2).Font.Color = RGB(255, 0, 0)
+                    Case "Troubleshooting":
+                        sht.Cells(i, 1).Font.Color = RGB(255, 0, 0)
+                        sht.Cells(i, 2).Font.Color = RGB(255, 0, 0)
+                    Case "Diisocianato":
+                        sht.Cells(i, 1).Font.Color = RGB(255, 0, 0)
+                        sht.Cells(i, 2).Font.Color = RGB(255, 0, 0)
+                    Case "Assessment":
+                        sht.Cells(i, 1).Font.Color = RGB(255, 0, 0)
+                        'sht.Cells(i, 2).Font.Color = RGB(255, 0, 0)
+                    Case "TCO":
+                        sht.Cells(i, 2).Font.Color = RGB(255, 0, 0)
+                        sht.Cells(i, 3).Font.Color = RGB(255, 0, 0)
+                    Case "POA":
+                        sht.Cells(i, 1).Font.Color = RGB(255, 0, 0)
+                        sht.Cells(i, 2).Font.Color = RGB(255, 0, 0)
+                    'Case "EHS":
+                    '    Set auxWB = analizeFileEHS
+                End Select
+               
+            End If
+        Next i
+    Next
+'BEN END
+End Sub
+
+' Método que define y aplica reglas de colores a las celdas del documento.
+Private Sub applyColorRules()
+    Dim rule1, rule2, rule3, rule4, rule5, rule6
+    Dim dataCoursesRange As Range
+    Dim statusCell
+    
+    For Each ws In Worksheets
+        
+        Set statusCell = ws.Rows(2).Find(What:="Curriculum Status", LookIn:=xlValues, LookAt:=xlWhole)
+        Set dataCoursesRange = ws.Range(ws.Cells(1, "F"), ws.Cells(ws.Rows.Count, ws.Columns.Count))
+        
+        If statusCell Is Nothing Then
+            statusCol = 1
+        Else
+            statusCol = statusCell.column
+        End If
+        
+        Set rule1 = dataCoursesRange.FormatConditions.Add(Type:=xlCellValue, Operator:=xlEqual, formula1:="Completed")
+        Set rule2 = dataCoursesRange.FormatConditions.Add(Type:=xlCellValue, Operator:=xlEqual, formula1:="Completed (Equivalent)")
+        Set rule3 = dataCoursesRange.FormatConditions.Add(Type:=xlCellValue, Operator:=xlEqual, formula1:="Exempt")
+        Set rule4 = dataCoursesRange.FormatConditions.Add(Type:=xlCellValue, Operator:=xlEqual, formula1:="Registered")
+        Set rule5 = dataCoursesRange.FormatConditions.Add(Type:=xlCellValue, Operator:=xlEqual, formula1:="Completed (Refresh)")
+        Set rule6 = dataCoursesRange.FormatConditions.Add(Type:=xlCellValue, Operator:=xlEqual, formula1:="Registered / No necessary")
+        
+        rule1.Interior.Color = RGB(146, 208, 80)    'Verde
+        rule2.Interior.Color = RGB(146, 208, 80)    'Verde
+        rule3.Interior.Color = RGB(146, 208, 80)    'Verde
+        rule4.Interior.Color = RGB(255, 255, 80)    'Amarillo
+        rule5.Interior.Color = RGB(146, 208, 80)    'Verde
+        rule6.Interior.Color = RGB(204, 153, 255)   'Morado
+        
+    Next ws
+End Sub
+
+' Método que colorea de color rojo las fechas de los cursos caducados y añade "(Caducado)" al final del estado del curso.
+Private Sub colorExpiredDates()
+    Dim statusCell, statusCol, lastRow, lastColumn, expYears
+    Dim expireDate As Date
+    Dim userID As String
+    Dim curso As String
+    
+    expYears = 5
+    
+    For Each ws In Worksheets
+        Set statusCell = ws.Rows(2).Find(What:="Curriculum Status", LookIn:=xlValues, LookAt:=xlWhole)
+        If statusCell Is Nothing Then
+            statusCol = 1
+        Else
+            statusCol = statusCell.column
+        End If
+        lastRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).row
+        lastColumn = ws.Cells(2, ws.Columns.Count).End(xlToLeft).column
+        
+        For i = 3 To lastRow
+        
+            userID = ws.Cells(i, 3).Value
+            
+            'If para encontrar a una o más personas concretas o todas, buscar la variable userIDsForTesting para ir a donde se añade o se quita a la gente de esta variable
+            If userIDsForTesting.Exists(userID) Or userIDsForTesting.Count = 0 Then
+                For j = statusCol + 2 To lastColumn Step 2
+                    curso = ws.Cells(2, j).Value
+                    Select Case ws.Cells(2, j).Value    ' Select Case para excepciones de años de caducidad ("-1" -> No caduca)
+                        Case "PREV., EXTINCION INCENDIOS, RECICLAJE - Completion date":
+                            expYears = 1
+                        Case "CURSO LUCHA CONTRAINCENDIOS. MÓDULO 1 - Status", "CURSO LUCHA CONTRAINCENDIOS. MODULO2 - Completion date", _
+                             "CURSO LUCHA CONTRAINCENDIOS MODULO3 - Completion date":
+                            expYears = -1
+                        Case Else:
+                            expYears = 5
+                    End Select
+                    
+                    If expYears > 0 Then
+                        With ws.Cells(i, j)
+                            If .Value <> "" And IsDate(.Value) Then
+                                expireDate = DateAdd("yyyy", expYears, CDate(.Value))
+                                If DateDiff("d", expireDate, Date) > 0 Then
+                                    ws.Cells(i, j).Font.Color = RGB(255, 0, 0)
+                                    ws.Cells(i, j).Interior.Color = RGB(255, 192, 0)
+                                    ws.Cells(i, j - 1).Value = ws.Cells(i, j - 1).Value & " (Caducado)"
+                                    ws.Cells(i, j - 1).Interior.Color = RGB(255, 192, 0) 'Naranja
+                                    ws.Cells(i, j - 1).Font.Color = RGB(255, 0, 0)
+                                End If
+                            End If
+                        End With
+                    End If
+                Next j
+            'End If de userIDsForTesting.Exists(userID) Or userIDsForTesting.Count = 0
+            End If
+        Next i
+    Next ws
+End Sub
+
+' Método que aplica los colores a las celdas del curriculum "Assessment"
+Private Sub applyColorToAssessment()
+    Dim lastRow, lastColumn, validColumn, dateColumn, i, expireDate, yearsToExpire
+    
+    yearsToExpire = 2
+    
+    lastRow = Cells(Rows.Count, 1).End(xlUp).row
+    lastColumn = Cells(2, Columns.Count).End(xlToLeft).column
+    
+    validColumn = Rows(2).Find(What:="Is the assessment valid?", LookIn:=xlValues, LookAt:=xlWhole).column
+    dateColumn = Rows(2).Find(What:="Assessment Approval Date", LookIn:=xlValues, LookAt:=xlWhole).column
+    
+    For i = 3 To lastRow
+        If Cells(i, validColumn).Value = "Yes" Then
+            Range(Cells(i, 1), Cells(i, lastColumn)).Interior.Color = RGB(146, 208, 80)     'Verde
+            expireDate = Cells(i, dateColumn).Value
+            If expireDate <> "" And IsDate(expireDate) Then
+                expireDate = DateAdd("yyyy", yearsToExpire, CDate(expireDate))
+                If DateDiff("d", expireDate, Date) > 0 Then
+                    Cells(i, dateColumn).Font.Color = RGB(255, 0, 0)    'Rojo
+                End If
+            End If
+        Else
+            Cells(i, validColumn).Font.Color = RGB(255, 0, 0)   'Rojo
+        End If
+    Next i
+End Sub
+
+' Método que ordena la tabla del curriculum correspondiente
+Private Sub sortTable(ByVal curriculum)
+    Dim sortCol1, sortCol2, lastRow, lastColumn, rng
+    
+    Select Case curriculum
+        Case NAME_AS:
+            lastRow = Cells(Rows.Count, 1).End(xlUp).row
+            lastColumn = Cells(2, Columns.Count).End(xlToLeft).column
+            Set rng = Range(Cells(2, 1), Cells(lastRow, lastColumn))
+            sortCol1 = Rows(2).Find(What:="Is the assessment valid?", LookIn:=xlValues, LookAt:=xlWhole).column
+            sortCol2 = Rows(2).Find(What:="Assessment Approval Date", LookIn:=xlValues, LookAt:=xlWhole).column
+            With ActiveSheet.Sort
+                .SortFields.Clear
+                .SortFields.Add key:=rng.Columns(sortCol2), SortOn:=xlSortOnValues, Order:=xlAscending, DataOption:=xlSortNormal
+                .SortFields.Add key:=rng.Columns(sortCol1), SortOn:=xlSortOnValues, Order:=xlAscending, DataOption:=xlSortNormal
+                .SortFields.Add key:=rng.Columns(sortCol2), SortOn:=xlSortOnFontColor, Order:=xlDescending, DataOption:=xlSortNormal
+                .SetRange rng
+                .header = xlYes
+                .MatchCase = False
+                .Orientation = xlTopToBottom
+                .SortMethod = xlPinYin
+                .Apply
+            End With
+    End Select
+End Sub
+
+' Método que aplica autoajuste a las columnas del documento con una anchura minima definida
+Public Sub autofitColumns()
+    Dim lastRow, lastColumn As Integer
+    Dim ws As Worksheet
+    Dim col, minWidth, headerRow
+    
+    minWidth = 12
+    headerRow = 2
+    
+    For Each ws In Worksheets
+        lastRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).row
+        lastColumn = ws.Cells(headerRow, ws.Columns.Count).End(xlToLeft).column
+        With ws.Range(ws.Cells(3, 1), ws.Cells(lastRow, lastColumn))
+            .WrapText = False
+            .Columns.AutoFit
+            For Each col In .Columns
+                If col.ColumnWidth < minWidth Then
+                    col.ColumnWidth = minWidth
+                    .Rows(headerRow).AutoFit
+                End If
+            Next col
+        End With
+    Next ws
+    
+    Sheets(1).Activate
+End Sub
+
+' Método que da formato a la tabla
+Public Sub formatTable()
+    For Each ws In Worksheets
+        With ws.Rows
+            .HorizontalAlignment = xlLeft
+            .VerticalAlignment = xlCenter
+        End With
+    
+        With ws.Rows(1)
+            .RowHeight = 40
+            .HorizontalAlignment = xlCenter
+'            .VerticalAlignment = xlCenter
+        End With
+        
+        ws.Range(ws.Cells(1, 1), ws.Cells(1, 5)).Merge
+        With ws.Cells(1, 1)
+            .Interior.Color = RGB(128, 128, 128)
+            .Font.Color = RGB(255, 255, 255)
+            .Font.Bold = True
+        End With
+    Next ws
+End Sub
+
+' Método que crea agupaciones de columnas
+Private Sub groupColumns(ByVal ws As Worksheet, ByVal columnGroups As Dictionary)
+    Dim i, n, lastRow
+    Dim colorArray
+    
+    colorArray = Array(RGB(218, 150, 148), RGB(196, 215, 155), RGB(149, 179, 215), RGB(147, 172, 78), _
+                        RGB(196, 189, 151), RGB(217, 217, 217), RGB(252, 213, 180))
+    
+    lastRow = ws.Cells(Rows.Count, 1).End(xlUp).row
+    
+    ws.Range(ws.Cells(2, 6), ws.Cells(lastRow, 6)).BorderAround LineStyle:=xlContinuous, Weight:=xlThick
+    
+    n = 0
+    For i = 0 To UBound(columnGroups.Keys)
+        With ws.Cells(1, columnGroups.Items(i)(0))
+            .Value = columnGroups.Keys(i)
+            .Font.Size = 13
+            .Font.Bold = True
+            .WrapText = True
+        End With
+        
+        ws.Columns(columnGroups.Items(i)(0)).ColumnWidth = 23
+
+        
+        With ws.Range(ws.Cells(2, columnGroups.Items(i)(0)), ws.Cells(2, columnGroups.Items(i)(1)))
+            .Borders.LineStyle = xlContinuous
+            .Borders.Color = RGB(0, 0, 0)
+            .Borders.Weight = xlMedium
+            .Font.Bold = True
+        End With
+        ws.Range(ws.Cells(1, columnGroups.Items(i)(0)), ws.Cells(2, columnGroups.Items(i)(1))).Interior.Color = colorArray(n)
+        ws.Range(ws.Cells(1, columnGroups.Items(i)(0)), ws.Cells(1, columnGroups.Items(i)(1) - 1)).Merge
+        ws.Range(ws.Cells(1, columnGroups.Items(i)(0)), ws.Cells(lastRow, columnGroups.Items(i)(1))).BorderAround _
+                                                                                                    LineStyle:=xlContinuous, Weight:=xlThick
+        If n = UBound(colorArray) Then
+            n = 0
+        Else
+            n = n + 1
+        End If
+    Next i
+End Sub
+
+' Método que agrupa cursos (estado y fecha) con un borde.
+Private Sub groupCourses(ByVal ws As Worksheet, ByVal startColumn, ByVal endColumn)
+    Dim i, lastRow
+    Dim colorArray
+    
+    lastRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).row
+    
+    If endColumn = 0 Then
+        endColumn = ws.Cells(2, ws.Columns.Count).End(xlToLeft).column
+    End If
+    
+    For i = startColumn To endColumn Step 2
+        ws.Range(ws.Cells(1, i), ws.Cells(1, i + 1)).BorderAround LineStyle:=xlContinuous, Weight:=xlThick
+        ws.Range(ws.Cells(2, i), ws.Cells(lastRow, i + 1)).BorderAround LineStyle:=xlContinuous, Weight:=xlThick
+    Next i
+End Sub
+
+' Método que reemplaza los estados vacíos o invalidos con un estado "Pending"
+'   o lo busca en el fichero "All learning" si se ha dado al checkbox.
+    Private Sub fillEmptyStatus(ByVal checkAllLearningFile As Boolean, _
+            Optional ByVal learningKey As String = "My Team All Learning", _
+            Optional ByVal learningFilter As String = "My Team All Learning*.xls*")
+    Dim startColumn, lastRow, lastColumn, i, j, allLearningData, expireDate, userIDCol, test, expYears
+    Dim dataWB, learningWB As Workbook
+    Dim dataSheet As Worksheet
+    Dim course, userID As String
+    Dim learningLastRow, learningLastColumn, learningCourseColumn, learningUserIDColumn, trainingEndDateNumberColumn, learningStatusColumn
+    
+    Set dataWB = ActiveWorkbook
+    Set dataSheet = ActiveSheet
+    
+    If checkAllLearningFile Then
+       
+        filePath = getFilePath(learningKey, learningFilter)
+           
+        Set learningWB = Workbooks.Open(fileName:=filePath, ReadOnly:=False)
+        
+        With learningWB.Sheets(1)
+            learningLastRow = .Cells(.Rows.Count, 1).End(xlUp).row
+            learningLastColumn = .Cells(2, .Columns.Count).End(xlToLeft).column
+            
+            learningCourseColumn = .Rows(1).Find(What:="Training - Training title", LookIn:=xlValues, LookAt:=xlWhole).column
+            learningUserIDColumn = .Rows(1).Find(What:="User - User ID", LookIn:=xlValues, LookAt:=xlWhole).column
+            learningStatusColumn = .Rows(1).Find(What:="Training record - Training record status", LookIn:=xlValues, LookAt:=xlWhole).column
+            
+            trainingEndDateNumberColumn = .Rows(1).Find(What:="Training - Training end date", LookIn:=xlValues, LookAt:=xlWhole).column
+            trainingStartingDateNumberColumn = .Rows(1).Find(What:="Training - Training starting date", LookIn:=xlValues, LookAt:=xlWhole).column
+            
+            .Cells.EntireRow.Hidden = False
+            .Cells.EntireColumn.Hidden = False
+            
+            .AutoFilterMode = False
+            
+            .Cells.AutoFilter Field:=learningStatusColumn, Operator:=xlFilterValues, Criteria1:=Array("Completed", "Completed (Equivalent)", "Exempt", "Registered")
+            .Cells.Sort Key1:=.Columns(trainingEndDateNumberColumn), Order1:=xlDescending, header:=xlYes
+            
+        End With
+    End If
+    
+    For Each ws In dataWB.Worksheets
+        startColumn = ws.Rows(2).Find(What:="Curriculum Status", LookIn:=xlValues, LookAt:=xlWhole).column + 1
+        lastRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).row
+        lastColumn = ws.Cells(2, ws.Columns.Count).End(xlToLeft).column
+        userIDCol = ws.Rows(2).Find(What:="Employee ID", LookIn:=xlValues, LookAt:=xlWhole).column
+        
+        For i = 3 To lastRow
+
+            userID = ws.Cells(i, userIDCol).Value
+            
+           'If para encontrar a una o más personas concretas, buscar la variable userIDsForTesting para ir a donde se añade o se quita a la gente de esta variable
+            If userIDsForTesting.Exists(userID) Or userIDsForTesting.Count = 0 Then
+                
+                 'Este filtro está puesto para ver los resultados de la persona concreta a la hora de querer depurar y hacerlo más fácil o accesible/legible
+                dataWB.Sheets(1).Cells.AutoFilter Field:=userIDCol, Criteria1:=userID
+                
+                If checkAllLearningFile Then
+                    learningWB.Sheets(1).Columns(learningUserIDColumn).NumberFormat = "@"
+                    learningWB.Sheets(1).Cells.AutoFilter Field:=learningUserIDColumn, Criteria1:=userID
+                End If
+                
+                For j = startColumn To lastColumn Step 2
+                    courseHeader = ws.Cells(2, j + 1).Value
+                    course = Split(ws.Cells(2, j).Value, " - ")(0)
+                    
+                    If IsDate(ws.Cells(i, j + 1).Value) Then
+                        Select Case ws.Cells(2, j + 1).Value
+                            Case "PREV., EXTINCION INCENDIOS, RECICLAJE - Completion date":
+                                expYears = 1
+                            Case "CURSO LUCHA CONTRAINCENDIOS. MÓDULO 1 - Status", "CURSO LUCHA CONTRAINCENDIOS. MODULO2 - Completion date", _
+                                 "CURSO LUCHA CONTRAINCENDIOS MODULO3 - Completion date":
+                                expYears = -1
+                            Case Else:
+                                expYears = 5
+                        End Select
+                        
+                        If expYears > 0 Then
+                            expireDate = DateAdd("yyyy", expYears, CDate(ws.Cells(i, j + 1).Value))
+                        Else
+                            expireDate = DateAdd("yyyy", 5, Date)
+                        End If
+                    End If
+                    
+                    If (Not isValid(ws.Cells(i, j).Value, "*")) Or DateDiff("d", expireDate, Date) > 0 Or ws.Cells(i, j + 1).Value = "" Then 'Check All Learning para cursos no validos, caducados o sin fecha
+                        
+                        If checkAllLearningFile Then
+                            
+                            allLearningData = checkAllLearningForMissingCourse(learningWB, userID, course, learningLastRow, learningLastColumn, _
+                                    learningCourseColumn, learningUserIDColumn, trainingEndDateNumberColumn, trainingStartingDateNumberColumn, learningStatusColumn, courseHeader)
+                            
+                            ws.Cells(i, j) = allLearningData(0) 'Status
+                            
+                            ws.Cells(i, j + 1).NumberFormat = "@" 'Formatear a tipo fecha la celda
+                            ws.Cells(i, j + 1) = allLearningData(1) 'Meter la fecha
+                        End If
+                        
+                    End If
+                Next j
+                
+            'End If de userIDsForTesting.Exists(userID) Or userIDsForTesting.Count = 0
+            End If
+               
+                'Esta linea es para quitar el filtro anterior una vez mostrada la persona de forma individual
+                dataWB.Sheets(1).Cells.AutoFilter Field:=userIDCol
+                
+        Next i
+    Next ws
+    
+    If checkAllLearningFile Then
+        learningWB.Close SaveChanges:=False
+    End If
+End Sub
+
+Private Function checkAllLearningForMissingCourse(ByRef learningWB As Workbook, ByVal userID As String, ByVal course As String, _
+                        lastRow, lastColumn, courseColumn, userIDColumn, trainingEndDateNumberColumn, trainingStartingDateNumberColumn, statusColumn, courseHeader)
+    
+    Dim filePath, newStatus, expireData, filteredFirstRowStatus, filteredFirstRowDate, filteredSecondRowStatus, filteredSecondRowDate, filteredRowLastTrainingRecordStatus As String
+    Dim learningWS As Worksheet
+    Dim filteredFirstRow, filteredSecondRow, filteredRow As Variant
+    
+    With learningWB.Sheets(1)
+        
+        .Cells.AutoFilter Field:=courseColumn, Criteria1:=course & "*"
+        
+         'If para depurar y encontrar un curso concreto de una persona, no es necesario comentar pero quizás aumente algo rendimiento si se comenta
+        'If course = courseNameForTesting Then
+            'trainingStartingDateNumberColumn = 7 'No aporta ningun valor esta linea, solo es para poder poner punto de ruptura dentro de la condición para cuando se cumpla
+        'End If
+        
+        On Error Resume Next
+        
+        'Puede ser que todas las variables de filtered estén vacias al pasar por ellas
+        'porque no hayan filas de información del curso en My Team All Learning,
+        'para esa persona, esto puede ocurrir, no es que esté mal
+              
+        '-------------------------------------------------------------------------------------------------------------------------------------------------------
+        'EXTRAEMOS EL NÚMERO DE LAS FILAS VISIBLES EN ORDEN PARA PODER EXTRAER LAS SIGUIENTES QUE NECESITEMOS :
+        
+        'OJO CON NO CONFUNDIRNOS, EL NÚMERO DE LA FILA ES LITERALMENTE QUE SI HAY UN FILTRO PUESTO Y LA (((PRIMERA)))) FILA QUE QUEREMOS
+        'PONE QUE ESTÁ EN LA FILA 596, ES ESE NÚMERO DE FILA QUE USAREMOS PARA OBTENER SUS DATOS.
+        
+        'LUEGO USAREMOS EL NÚMERO DE LA PRIMERA FILA QUE QUERÍAMOS PARA BUSCAR LA SEGUNDA PERO SUMÁNDOLE 1 (filteredFirstRowNumber + 1)
+        'Y ASÍ SUCESIVAMENTE.
+        
+        'PARA OBTENER UNA TERCERA FILA, USAMOS EL NÚMERO DE LA SEGUNDA FILA SUMANDOLE 1.
+        
+        'ASÍ CON TODAS
+        '-------------------------------------------------------------------------------------------------------------------------------------------------------
+        
+        'Extaemos el número de las filas que nosotros definimos aquí que queremos analizar, aquí pueden ser 1, 2, 3 o las que sean según lo que necesitemos,
+        'pero tendremos que añadir más abajo su procesamiento para extraer las filas que queremos (ACTUALMENTE EL CÓDIGO EXTRAE 2)
+        
+       '-----------Primera fila de información-------------------
+       filteredFirstRowNumber = .Range(Cells(2, 1), Cells(lastRow, lastColumn)).SpecialCells(xlCellTypeVisible).row
+        'Si la primera fila está vacia significa que no hay ninguna información, así que ponemos el valor de todas las filas que queríamos analizar como Empty
+        If IsEmpty(filteredFirstRowNumber) Then
+            filteredFirstRow = Empty
+            filteredSecondRow = Empty
+        Else
+            
+            'Si hay información en la primera fila, cojemos su status y su número de fila por si a futuro quisieramos analizar una segunda fila
+            filteredFirstRow = .Range(Cells(filteredFirstRowNumber, 1), Cells(lastRow, lastColumn)).SpecialCells(xlCellTypeVisible).Value
+            filteredFirstRowStatus = filteredFirstRow(1, statusColumn)
+            
+            '-----------Segunda fila de información-------------------
+            filteredSecondRowNumber = .Range(Cells(filteredFirstRowNumber + 1, lastColumn), Cells(lastRow, lastColumn)).SpecialCells(xlCellTypeVisible).row
+            'Comprobamos si el número de la segunda fila es 1, que sería la cabecera, lo que significa que no hay filas de información
+            If filteredSecondRowNumber = 1 Then
+                filteredSecondRow = Empty
+            Else
+             'Si hay información en la segunda fila, cojemos su status y su número de fila por si a futuro quisieramos analizar una tercera fila
+                 filteredSecondRow = .Range(Cells(filteredSecondRowNumber, 1), Cells(lastRow, lastColumn)).SpecialCells(xlCellTypeVisible).Value
+                 filteredSecondRowStatus = filteredSecondRow(1, statusColumn)
+            End If
+            '--------------------------------------------------------------
+        End If
+        '--------------------------------------------------------------
+        
+       
+        
+        
+        
+        '(RECORDATORIO DE QUE LOS DATOS ESTAN SACANDOSE DE <<<MY TEAM ALL LEARNING>>> EN ESTA FUNCIÓN)
+        '---COMIENZA EL ANÁLISIS DE INFORMACIÓN DEL CURSO ACTUALMENTE ALMACENADO EN LA VARIABLE courseHeader
+        'PARA DETERMINAR SU FECHA Y ESTADO DEFINITIVO ENTRE OTROS, PARA LA PERSONA------
+        
+        'AHORA MISMO ESTÁ FILTRADA LA HOJA DE MY TEAM ALL LEARNING CON EL USUARIO Y CURSO QUE ESTAMOS ANALIZANDO
+        
+        'COMPROBAMOS SI HUBO MÁS DE 1 FILA DE INFORMACIÓN DEL CURSO PARA LA PERSONA
+        If Not (IsEmpty(filteredFirstRow) And IsEmpty(filteredSecondRow)) Then
+        
+            'COMPROBAMOS SI SE DA LA CASUÍSTICA DE QUE LA PRIMERA FILA QUE HAY ES REGISTERED Y LA SEGUNDA COMPLETED
+            If filteredFirstRowStatus = "Registered" And filteredSecondRowStatus = "Completed" Then
+                
+                'COJEMOS LA FECHA DE TRAINING STARTING DATE DE LA FILA CON  STATUS DE REGISTERED
+                filteredFirstRowDate = Split(filteredFirstRow(1, trainingStartingDateNumberColumn), " ")(0) 'FORMATEAMOS LA FECHA PORQUE EN LA CELDA VIENE CON LA HORA TAMBIÉN Y SOLO QUEREMOS DIAS/MES/AÑO
+                
+                'COJEMOS LA FECHA DE END TRAINING PARA LA FILA CON STATUS DE COMPLETADO Y LE QUITAMOS LA HORA QUE VIENE CON LA FECHA EN LA CELDA
+                filteredSecondRowDate = Split(filteredSecondRow(1, trainingEndDateNumberColumn), " ")(0)
+                 
+                    'COMPROBAMOS LA FECHA DE CADUCIDAD DEL CURSO
+                    If IsDate(filteredSecondRowDate) Then
+                        Select Case courseHeader
+                            Case "PREV., EXTINCION INCENDIOS, RECICLAJE - Completion date":
+                                expYears = 1
+                            Case "CURSO LUCHA CONTRAINCENDIOS. MÓDULO 1 - Status", "CURSO LUCHA CONTRAINCENDIOS. MODULO2 - Completion date", _
+                                 "CURSO LUCHA CONTRAINCENDIOS MODULO3 - Completion date":
+                                expYears = -1
+                            Case Else:
+                                expYears = 5
+                        End Select
+                        
+                        If expYears > 0 Then
+                            expireDate = DateAdd("yyyy", expYears, CDate(filteredSecondRowDate))
+                        Else
+                            expireDate = DateAdd("yyyy", 5, CDate(filteredSecondRowDate))
+                        End If
+                    End If
+                    
+                    'SI EFECTIVAMENTE ESTÁ CADUCADO, LE AÑADIMOS COMO STATUS REGISTERED Y SU FECHA DE REGISTRO
+                    If DateDiff("d", expireDate, Date) > 0 Then
+                        newStatus = filteredFirstRowStatus
+                        newDate = filteredFirstRowDate
+                    'SI NO ESTÁ CADUCADO, PONEMOS COMO STATUS QUE ESTÁ REGISTRADO PERO QUE NO ES NECESARIO
+                    Else
+                        newStatus = "Registered / No necessary"
+                        newDate = filteredFirstRowDate
+                    End If
+                    
+            'SI LA PRIMERA FILA NO TIENE DE STATUS REGISTERED Y LA SEGUNDA COMPLETED, EN CUALQUIERA DE LOS CASOS,
+            'COGEMOS LOS DATOS DE LA PRIMERA FILA QUE APARECE
+            Else
+                filteredFirstRowDate = Split(filteredFirstRow(1, trainingStartingDateNumberColumn), " ")(0)
+                newStatus = filteredFirstRowStatus
+                'LA FECHA QUE SE QUIERE MOSTRAR ES CUANDO SE TERMINÓ EL CURSO,
+                'COMPROBAMOS EN LA COLUMNA "END TRAINING"
+                If filteredFirstRowDate <> "" Then
+                    newDate = filteredFirstRowDate
+                'SI NO HAY FECHA EN LA COLUMNA "END TRAINING", SE COLOCA LA FECHA DE SU ÚLTIMO STATUS
+                Else
+                    newDate = Split(filteredFirstRow(1, trainingStartingDateNumberColumn), " ")(0)
+                End If
+            End If
+        'SI NO HUBO MÁS DE 2 FILAS DE INFORMACIÓN COMPROBAMOS SI HUBO AUNQUE SEA 1
+        ElseIf Not IsEmpty(filteredFirstRow) Then
+                newStatus = filteredFirstRowStatus
+                'LA FECHA QUE SE QUIERE MOSTRAR ES CUANDO SE TERMINÓ EL CURSO,
+                'COMPROBAMOS EN LA COLUMNA "END TRAINING"
+                If filteredFirstRowDate <> "" Then
+                    newDate = filteredFirstRowDate
+                'SI NO HAY FECHA EN LA COLUMNA "END TRAINING", SE COLOCA LA FECHA DE SU ÚLTIMO STATUS
+                Else
+                    newDate = Split(filteredFirstRow(1, trainingStartingDateNumberColumn), " ")(0)
+                End If
+        'SI NO HAY FILAS CON INFORMACIÓN DEL CURSO PARA ESA PERSONA, PONEMOS STATUS PENDING Y FECHA VACIA PARA EL INFORME FINAL
+        Else
+            newStatus = "Pending"
+            newDate = ""
+        End If
+        
+        checkAllLearningForMissingCourse = Array(newStatus, newDate)
+        
+    End With
+    
+    On Error GoTo 0
+    
+End Function
+
+Function getVisibleRowsUsingSpecialCells(ByVal ws As Worksheet) As Variant
+    Dim visibleRange As Range
+    Dim area, rng As Range
+    Dim allVisibleRanges As Range
+
+    ' Filter visible cells and assign them to a range variable
+    On Error Resume Next ' In case no cells are visible
+    Set rng = ws.UsedRange
+    Set visibleRange = rng.Offset(1, 0).Resize(rng.Rows.Count - 1, rng.Columns.Count).SpecialCells(xlCellTypeVisible)
+    On Error GoTo 0
+
+    ' Check if visibleRange is not Nothing
+    If Not visibleRange Is Nothing Then
+        ' Loop through each area in the visibleRange
+        For Each area In visibleRange.Areas
+            If allVisibleRanges Is Nothing Then
+                ' If allVisibleRanges is empty, set it to the current area
+                Set allVisibleRanges = area
+            Else
+                ' If allVisibleRanges is not empty, union it with the current area
+                Set allVisibleRanges = Union(allVisibleRanges, area)
+            End If
+        Next area
+    End If
+    
+    getVisibleRowsUsingSpecialCells = allVisibleRanges.Value
+End Function
+
+Private Sub checkGroupCompletion(ByVal ws As Worksheet, ByVal columnGroups As Dictionary)
+    Dim lastRow, i, j, notValidCount, curriculumStatusCol, completedCourseCol As Integer
+    Dim valid As Boolean
+    Dim userID As String
+    Dim userIDCol As Integer
+    Dim completedGroups As Integer
+    
+    lastRow = ws.Cells(Rows.Count, 1).End(xlUp).row
+    curriculumStatusCol = ws.Rows(2).Find(What:="Curriculum Status", LookIn:=xlValues, LookAt:=xlWhole).column
+    userIDCol = ws.Rows(2).Find(What:="Employee ID", LookIn:=xlValues, LookAt:=xlWhole).column
+    
+    
+    For i = 3 To lastRow
+    
+        completedGroups = 0
+        userID = ws.Cells(i, 3).Value
+    
+        'If para encontrar a una o más personas concretas o todas, buscar la variable userIDsForTesting para ir a donde se añade o se quita a la gente de esta variable
+        If userIDsForTesting.Exists(userID) Or userIDsForTesting.Count = 0 Then
+                    
+            'Este filtro está puesto para ver los resultados de la persona concreta a la hora de querer depurar y hacerlo más fácil o accesible/legible
+            ws.Cells.AutoFilter Field:=userIDCol, Criteria1:=userID
+            
+            For k = 0 To UBound(columnGroups.Keys)
+                
+                valid = False
+                
+                For j = columnGroups.Items(k)(0) To columnGroups.Items(k)(1)
+                    
+                    With ws.Cells(i, j)
+                        If isValid(.Value, ws.Cells(i, curriculumStatusCol).Value) Then
+                            valid = True
+                            completedCourseCol = j
+                            completedGroups = completedGroups + 1
+                            Exit For
+                        End If
+                    End With
+                    
+                Next j
+                
+                If Not valid Then
+                    
+                    ws.Range(ws.Cells(i, columnGroups.Items(k)(0)), ws.Cells(i, columnGroups.Items(k)(1))).Font.Color = RGB(255, 0, 0)
+                    
+                    If ws.Cells(1, columnGroups.Items(k)(1)).Value = "" Then
+                        ws.Cells(1, columnGroups.Items(k)(1)).Value = 1
+                        ws.Cells(1, columnGroups.Items(k)(1)).Font.Color = RGB(255, 0, 0)
+                        ws.Cells(1, columnGroups.Items(k)(1)).Font.Bold = True
+                        ws.Cells(1, columnGroups.Items(k)(1)).Font.Size = 16
+                    Else
+                        ws.Cells(1, columnGroups.Items(k)(1)).Value = ws.Cells(1, columnGroups.Items(k)(1)).Value + 1
+                        
+                    End If
+                Else
+                    For j = columnGroups.Items(k)(0) To columnGroups.Items(k)(1) Step 2
+                        If j <> completedCourseCol And ws.Cells(i, j).Value = "Pending" Then
+                            ws.Cells(i, j).Value = "Not Required"
+                            ws.Cells(i, j + 1).Value = ""
+                        End If
+                    Next j
+                End If
+                
+            Next k
+            
+            'Decidimos el status del curriculum si tiene todos los grupos completados
+'            If completedGroups = columnGroups.Count Then
+'                ws.Cells(i, curriculumStatusCol).Value = "Completed"
+'            End If
+            
+            'Este filtro está puesto para ver los resultados de la persona concreta a la hora de querer depurar y hacerlo más fácil o accesible/legible
+            ws.Cells.AutoFilter Field:=userIDCol
+            
+        'End If de userIDsForTesting.Exists(userID) Or userIDsForTesting.Count = 0
+        End If
+    Next i
+End Sub
+
+Private Sub checkGroupCompletionEHS(ByVal ws As Worksheet, ByVal columnGroupsWC As Dictionary, ByVal groupName As String)
+    Dim lastRow, i, j, notValidCount, startColumn, endColumn, curriculumStatusCol As Integer
+    Dim completedCourseCol1, completedCourseCol2, completedCourseCol3 As Integer
+    Dim valid As Boolean
+    Dim userID As String
+    
+    startColumn = columnGroupsWC(groupName)(0)
+    endColumn = columnGroupsWC(groupName)(1)
+
+    lastRow = ws.Cells(Rows.Count, 1).End(xlUp).row
+    curriculumStatusCol = ws.Rows(2).Find(What:="Curriculum Status", LookIn:=xlValues, LookAt:=xlWhole).column
+    
+    With ws.Range(ws.Cells(2, startColumn + 3), ws.Cells(lastRow, startColumn + 3)).Borders(xlEdgeRight)
+        .LineStyle = xlContinuous
+        .Color = RGB(0, 0, 0)
+        .Weight = xlMedium
+    End With
+    
+    For i = 3 To lastRow
+    
+        userID = ws.Cells(i, 3).Value
+            
+        'If para encontrar a una o más personas concretas o todas, buscar la variable userIDsForTesting para ir a donde se añade o se quita a la gente de esta variable
+        If userIDsForTesting.Exists(userID) Or userIDsForTesting.Count = 0 Then
+            
+            valid = False
+            
+            If isValid(ws.Cells(i, startColumn).Value, ws.Cells(i, curriculumStatusCol).Value) _
+                    Or isValid(ws.Cells(i, startColumn + 2).Value, ws.Cells(i, curriculumStatusCol).Value) Then
+                    
+                valid = True
+                completedCourseCol1 = startColumn
+                completedCourseCol2 = startColumn + 2
+                completedCourseCol3 = startColumn + 2
+                
+            ElseIf isValid(ws.Cells(i, startColumn + 4).Value, ws.Cells(i, curriculumStatusCol).Value) _
+                        And isValid(ws.Cells(i, startColumn + 6).Value, ws.Cells(i, curriculumStatusCol).Value) _
+                        And isValid(ws.Cells(i, startColumn + 8).Value, ws.Cells(i, curriculumStatusCol).Value) Then
+                        
+                valid = True
+                
+                completedCourseCol1 = startColumn + 4
+                completedCourseCol2 = startColumn + 6
+                completedCourseCol3 = startColumn + 8
+                
+            End If
+            
+            If Not valid Then
+            
+                ws.Range(ws.Cells(i, startColumn), ws.Cells(i, endColumn)).Font.Color = RGB(255, 0, 0)
+                
+                If ws.Cells(1, endColumn).Value = "" Then
+                    ws.Cells(1, endColumn).Value = 1
+                    ws.Cells(1, endColumn).Font.Color = RGB(255, 0, 0)
+                    ws.Cells(1, endColumn).Font.Bold = True
+                    ws.Cells(1, endColumn).Font.Size = 16
+                Else
+                    ws.Cells(1, endColumn).Value = ws.Cells(1, endColumn).Value + 1
+                End If
+                
+            Else
+                For j = startColumn To endColumn Step 2
+                    If j <> completedCourseCol1 And j <> completedCourseCol2 And j <> completedCourseCol3 Or ws.Cells(i, j).Value = "Pending" Then
+                            ws.Cells(i, j).Value = "Not Required"
+                            ws.Cells(i, j + 1).Value = ""
+                    End If
+                Next j
+            End If
+        'End If de userIDsForTesting.Exists(userID) Or userIDsForTesting.Count = 0
+        End If
+    Next i
+    
+End Sub
+
+'Si endColumn vale 0, continuar hasta ultima columna
+Private Sub checkCoursesCompletion(ByVal ws As Worksheet, ByVal startColumn As Long, ByVal endColumn As Long)
+    Dim lastRow, i, j, notValidCount, curriculumStatusCol As Integer
+    Dim valid As Boolean
+    Dim userID As String
+    
+    curriculumStatusCol = ws.Rows(2).Find(What:="Curriculum Status", LookIn:=xlValues, LookAt:=xlWhole).column
+    
+    lastRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).row
+    If endColumn < 1 Then
+        endColumn = ws.Cells(2, ws.Columns.Count).End(xlToLeft).column
+    End If
+    
+    For i = 3 To lastRow
+        
+        userID = ws.Cells(i, 3).Value
+        
+        'If para encontrar a una o más personas concretas o todas, buscar la variable userIDsForTesting para ir a donde se añade o se quita a la gente de esta variable
+        If userIDsForTesting.Exists(userID) Or userIDsForTesting.Count = 0 Then
+            
+            For j = startColumn To endColumn Step 2
+                
+                valid = isValid(ws.Cells(i, j).Value, ws.Cells(i, curriculumStatusCol).Value)
+                
+                If Not valid Then
+                
+                    ws.Range(ws.Cells(i, j), ws.Cells(i, j + 1)).Font.Color = RGB(255, 0, 0)
+                    
+                    If ws.Cells(1, j + 1).Value = "" Then
+                        ws.Cells(1, j + 1).Value = 1
+                        ws.Cells(1, j + 1).Font.Color = RGB(255, 0, 0)
+                        ws.Cells(1, j + 1).Font.Bold = True
+                        ws.Cells(1, j + 1).Font.Size = 16
+                    Else
+                        ws.Cells(1, j + 1).Value = ws.Cells(1, j + 1).Value + 1
+                        ws.Cells(1, j + 1).Font.Color = RGB(255, 0, 0)
+                    End If
+                    
+                    
+                End If
+                
+            Next j
+        'End If de userIDsForTesting.Exists(userID) Or userIDsForTesting.Count = 0
+        End If
+    Next i
+End Sub
+
+Private Function isValid(ByVal status As String, ByVal curriculumStatus) As Boolean
+
+'    If curriculumStatus = "Completed" Then
+'        isValid = True
+'    Else
+
+    If status = "Completed" Or _
+    status = "Completed (Equivalent)" Or _
+    status = "Completed (Caducado)" Or _
+    status = "Exempt" Or _
+    status = "Registered" Or _
+    status = "Completed (Refresh)" Or _
+    status = "Registered / No necessary" Then
+    
+        isValid = True
+    Else
+        isValid = False
+    End If
+    
+End Function
+
+Private Sub checkCurriculumCompletion()
+    Dim statusColumn, lastRow, lastColumn, i, curriculumStatusCol
+    Dim userID As String
+    Dim userIDCol As Integer
+    
+    
+    For Each ws In Worksheets
+        If ws.name = "Reporte BC" Or ws.name = "Reporte WC" Or _
+          ws.name = "Reporte TL" Or ws.name = "Reporte SteerCo" Then
+            curriculumStatusCol = ws.Rows(2).Find(What:="Curriculum Status", LookIn:=xlValues, LookAt:=xlWhole).column
+            statusColumn = ws.Rows(2).Find(What:="Curriculum Status", LookIn:=xlValues, LookAt:=xlWhole).column
+            userIDCol = ws.Rows(2).Find(What:="Employee ID", LookIn:=xlValues, LookAt:=xlWhole).column
+            lastRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).row
+            lastColumn = ws.Cells(2, ws.Columns.Count).End(xlToLeft).column
+            
+            For i = 3 To lastRow
+            
+                userID = ws.Cells(i, 3).Value
+            
+                'If para encontrar a una o más personas concretas o todas, buscar la variable userIDsForTesting para ir a donde se añade o se quita a la gente de esta variable
+                If userIDsForTesting.Exists(userID) Or userIDsForTesting.Count = 0 Then
+                
+                    'Este filtro está puesto para ver los resultados de la persona concreta a la hora de querer depurar y hacerlo más fácil o accesible/legible
+                    ws.Cells.AutoFilter Field:=userIDCol, Criteria1:=userID
+                    
+                    If isValid(ws.Cells(i, statusColumn).Value, ws.Cells(i, curriculumStatusCol).Value) And Not ws.Cells(i, statusColumn).Value = "Registered" Then
+                        ws.Range(ws.Cells(i, statusColumn), ws.Cells(i, lastColumn)).Interior.Color = RGB(146, 208, 80)
+                    End If
+                    
+                    'Este filtro está puesto para ver los resultados de la persona concreta a la hora de querer depurar y hacerlo más fácil o accesible/legible
+                    ws.Cells.AutoFilter Field:=3
+                
+                'End If de userIDsForTesting.Exists(userID) Or userIDsForTesting.Count = 0
+                End If
+            Next i
+        End If
+    Next ws
+
+End Sub
+
+Private Sub checkCurriculumCompletionTCO()
+    Dim statusColumn, lastRow, lastColumn, i
+    Dim userID As String
+    
+    For Each ws In Worksheets
+        statusColumn = ws.Rows(2).Find(What:="Training Record Status", LookIn:=xlValues, LookAt:=xlWhole).column
+        lastRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).row
+        lastColumn = ws.Cells(2, ws.Columns.Count).End(xlToLeft).column
+        
+        For i = 3 To lastRow
+        
+            userID = ws.Cells(i, 3).Value
+        
+            'If para encontrar a una o más personas concretas o todas, buscar la variable userIDsForTesting para ir a donde se añade o se quita a la gente de esta variable
+            If userIDsForTesting.Exists(userID) Or userIDsForTesting.Count = 0 Then
+                
+                If isValid(ws.Cells(i, statusColumn).Value, ws.Cells(i, statusColumn).Value) And Not ws.Cells(i, statusColumn).Value = "Registered" Then
+                    ws.Range(ws.Cells(i, 1), ws.Cells(i, lastColumn)).Interior.Color = RGB(146, 208, 80)
+                End If
+             
+            'End If de userIDsForTesting.Exists(userID) Or userIDsForTesting.Count = 0
+            End If
+        Next i
+    Next ws
+
+End Sub
+
+Private Sub checkRefresh(ByVal exportWB As Workbook, ByVal initial As String, ByVal refresh As String)
+    Dim initialColumn, refreshColumn, lastRow
+    Dim userID As String
+    
+    For Each ws In exportWB.Sheets
+        initialColumn = ws.Rows(2).Find(What:=initial, LookIn:=xlValues, LookAt:=xlWhole).column
+        refreshColumn = ws.Rows(2).Find(What:=refresh, LookIn:=xlValues, LookAt:=xlWhole).column
+        lastRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).row
+        
+        For i = 3 To lastRow
+        
+            userID = ws.Cells(i, 3).Value
+            
+            'If para encontrar a una o más personas concretas o todas, buscar la variable userIDsForTesting para ir a donde se añade o se quita a la gente de esta variable
+            If userIDsForTesting.Exists(userID) Or userIDsForTesting.Count = 0 Then
+                
+                If isValid(ws.Cells(i, refreshColumn).Value, "*") Then
+                    ws.Cells(i, initialColumn).Value = "Completed (Refresh)"
+                    Range(ws.Cells(i, initialColumn), ws.Cells(i, initialColumn + 1)).Font.Color = RGB(0, 0, 0)
+                    ws.Cells(i, initialColumn).Interior.Color = RGB(146, 208, 80)
+                    ws.Cells(i, initialColumn + 1).Interior.Color = RGB(255, 255, 255)
+                End If
+            
+            'End If de userIDsForTesting.Exists(userID) Or userIDsForTesting.Count = 0
+            End If
+        Next i
+    Next ws
+End Sub
+
+'Fuction to check not required status of the initial course in the 'Riesgos Puesto' group.
+'If the second course is complete (caducado) then initial course should be 'Not Required'
+'If the second course is Pending and the first course is complete (caducado) then the first course should change to 'Not Required'.
+Private Sub checkNotRequiredRiesgo(ByVal exportWB As Workbook)
+    Dim initialColumn, refreshColumn, lastRow
+    Dim userID As String
+    Dim initialStatus As String
+    Dim refreshStatus As String
+    
+    For Each ws In exportWB.Sheets
+        initialColumn = ws.Rows(2).Find(What:="For. e Inf. de Riesgos P. Nuevo Ingreso - Status", LookIn:=xlValues, LookAt:=xlWhole).column
+        refreshColumn = ws.Rows(2).Find(What:="Training & Info on Risks in Work Place - Status", LookIn:=xlValues, LookAt:=xlWhole).column
+        lastRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).row
+        
+        For i = 3 To lastRow
+    
+            userID = ws.Cells(i, 3).Value
+        
+           'If para encontrar a una o más personas concretas o todas, buscar la variable userIDsForTesting para ir a donde se añade o se quita a la gente de esta variable
+            If userIDsForTesting.Exists(userID) Or userIDsForTesting.Count = 0 Then
+                
+                initialStatus = ws.Cells(i, initialColumn).Value
+                refreshStatus = ws.Cells(i, refreshColumn).Value
+                
+                If refreshStatus = "Completed (Caducado)" Or (refreshStatus = "Pending" And initialStatus = "Completed (Caducado)") Then
+                    ws.Cells(i, initialColumn).Value = "Not Required"
+                    ws.Cells(i, initialColumn + 1).Value = ""
+                    Range(ws.Cells(i, initialColumn), ws.Cells(i, initialColumn + 1)).Font.Color = RGB(0, 0, 0)
+                    ws.Cells(i, initialColumn).Interior.Color = RGB(146, 208, 80)
+                    ws.Cells(i, initialColumn + 1).Interior.Color = RGB(255, 255, 255)
+                End If
+            
+           'End If de userIDsForTesting.Exists(userID) Or userIDsForTesting.Count = 0
+        End If
+        Next i
+    Next ws
+End Sub
+
+'Fuction to correct cases in which there is no date for the 'For. e Inf. de Riesgos P. Nuevo Ingreso' course, but the refresher course is
+'Completed or Completed (Caducado) or Exempt
+'In these cases the status of the 'For. e Inf. de Riesgos P. Nuevo Ingreso' course should be Not Required.
+Private Sub checkNoDateRiesgo(ByVal exportWB As Workbook)
+    Dim initialColumn, refreshColumn, lastRow
+    Dim userID As String
+    Dim initialStatus As String
+    Dim refreshStatus As String
+    
+    For Each ws In exportWB.Sheets
+        initialColumn = ws.Rows(2).Find(What:="For. e Inf. de Riesgos P. Nuevo Ingreso - Status", LookIn:=xlValues, LookAt:=xlWhole).column
+        refreshColumn = ws.Rows(2).Find(What:="Training & Info on Risks in Work Place - Status", LookIn:=xlValues, LookAt:=xlWhole).column
+        lastRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).row
+        
+        For i = 3 To lastRow
+            
+            userID = ws.Cells(i, 3).Value
+    
+            'If para encontrar a una o más personas concretas o todas, buscar la variable userIDsForTesting para ir a donde se añade o se quita a la gente de esta variable
+            If userIDsForTesting.Exists(userID) Or userIDsForTesting.Count = 0 Then
+                
+                initialCourseDate = ws.Cells(i, initialColumn + 1).Value
+                refreshStatus = ws.Cells(i, refreshColumn).Value
+                
+                If initialCourseDate = "" And (refreshStatus = "Completed" Or refreshStatus = "Completed (Caducado)" Or refreshStatus = "Exempt") Then
+                    ws.Cells(i, initialColumn).Value = "Not Required"
+                    ws.Cells(i, initialColumn + 1).Value = ""
+                    Range(ws.Cells(i, initialColumn), ws.Cells(i, initialColumn + 1)).Font.Color = RGB(0, 0, 0)
+                    ws.Cells(i, initialColumn).Interior.Color = RGB(146, 208, 80)
+                    ws.Cells(i, initialColumn + 1).Interior.Color = RGB(255, 255, 255)
+                End If
+            
+            'End If de userIDsForTesting.Exists(userID) Or userIDsForTesting.Count = 0
+            End If
+        Next i
+    Next ws
+End Sub
+
+'Fuction to check not required status of courses where only one course is mandatory
+Private Sub checkNotRequired(ByVal ws As Worksheet, ByVal course1 As String, ByVal course2 As String)
+    Dim course1Column, course2Column, lastRow
+    Dim userID As String
+    Dim course1Status As String
+    Dim course2Status As String
+    Dim notRequiredColumn As Integer
+    
+
+    course1Column = ws.Rows(2).Find(What:=course1, LookIn:=xlValues, LookAt:=xlWhole).column
+    course2Column = ws.Rows(2).Find(What:=course2, LookIn:=xlValues, LookAt:=xlWhole).column
+    lastRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).row
+    
+    For i = 3 To lastRow
+    
+        userID = ws.Cells(i, 3).Value
+
+        'If para encontrar a una o más personas concretas o todas, buscar la variable userIDsForTesting para ir a donde se añade o se quita a la gente de esta variable
+        If userIDsForTesting.Exists(userID) Or userIDsForTesting.Count = 0 Then
+            
+            course1Status = ws.Cells(i, course1Column).Value
+            course2Status = ws.Cells(i, course2Column).Value
+            notRequiredColumn = 0
+            
+            If course1Status = "Completed (Caducado)" And course2Status = "Completed" Then
+                notRequiredColumn = course1Column
+            ElseIf course1Status = "Completed" And course2Status = "Completed (Caducado)" Then
+                notRequiredColumn = course2Column
+            End If
+            
+            If notRequiredColumn <> 0 Then
+                ws.Cells(i, notRequiredColumn).Value = "Not Required"
+                ws.Cells(i, notRequiredColumn + 1).Value = ""
+                Range(ws.Cells(i, notRequiredColumn), ws.Cells(i, notRequiredColumn + 1)).Font.Color = RGB(0, 0, 0)
+                ws.Cells(i, notRequiredColumn).Interior.Color = RGB(146, 208, 80)
+                ws.Cells(i, notRequiredColumn + 1).Interior.Color = RGB(255, 255, 255)
+            End If
+        
+        'End If de userIDsForTesting.Exists(userID) Or userIDsForTesting.Count = 0
+        End If 'Development
+    Next i
+End Sub
+
+Private Sub createSummary(ByVal curriculums As Dictionary, ByRef exportWB As Workbook)
+    Dim summaryWS As Worksheet
+    Dim curriculum
+    Dim tableRow As Integer
+    
+    Set summaryWS = exportWB.Worksheets.Add
+    summaryWS.name = "Resumen"
+    
+    tableRow = 2
+    For Each key In curriculums.Keys
+        Call createSummaryTable(tableRow, summaryWS, exportWB.Sheets(curriculums(key)), key)
+        tableRow = tableRow + 8
+    Next key
+    summaryWS.Columns(2).AutoFit
+End Sub
+
+Private Sub createSummaryTable(ByVal tableRow As Integer, ByVal summaryWS As Worksheet, ByVal curriculumWS As Worksheet, ByVal curriculumName As String)
+    Dim siglumList As Dictionary
+    Dim lastRow As Integer
+    Dim formula1, formula2, formula3 As String
+    Dim siglumListArray, i, key, firstSiglumCol
+    
+    firstSiglumCol = 4
+    Set siglumList = getSiglumList(curriculumWS, lastRow)
+    siglumListArray = sortStringArray(siglumList.Keys)
+    
+    With summaryWS
+        .Cells(tableRow, 2).Value = curriculumName
+        With .Range(.Cells(tableRow, 2), .Cells(tableRow, siglumList.Count + 3))
+            .Merge
+            .Interior.Color = RGB(220, 230, 241)
+            .VerticalAlignment = xlCenter
+            .HorizontalAlignment = xlCenter
+            .BorderAround LineStyle:=xlContinuous, Weight:=xlMedium
+        End With
+        
+        .Cells(tableRow + 2, 2).Value = "POPULATION"
+        .Cells(tableRow + 3, 2).Value = "COMPLETED"
+        .Cells(tableRow + 4, 2).Value = "TOTAL"
+        
+        For i = LBound(siglumListArray) To UBound(siglumListArray)
+            key = siglumListArray(i)
+            If siglumListArray(i) = "TAOA" Then
+            formula1 = "=COUNTIFS('" & curriculumWS.name & "'!" & curriculumWS.Range(curriculumWS.Cells(3, 4), curriculumWS.Cells(lastRow, 4)).Address & ",""" & key & """)"
+            
+            formula2 = "=COUNTIFS('" & curriculumWS.name & "'!" & curriculumWS.Range(curriculumWS.Cells(3, 4), curriculumWS.Cells(lastRow, 4)).Address & ",""" & key & _
+                                    """,'" & curriculumWS.name & "'!" & curriculumWS.Range(curriculumWS.Cells(3, 6), curriculumWS.Cells(lastRow, 6)).Address & ",""Completed"")" _
+                                    & "+ COUNTIFS('" & curriculumWS.name & "'!" & curriculumWS.Range(curriculumWS.Cells(3, 4), curriculumWS.Cells(lastRow, 4)).Address & ",""" & key & _
+                                    """,'" & curriculumWS.name & "'!" & curriculumWS.Range(curriculumWS.Cells(3, 6), curriculumWS.Cells(lastRow, 6)).Address & ",""Exempt"")" _
+                                    & "+ COUNTIFS('" & curriculumWS.name & "'!" & curriculumWS.Range(curriculumWS.Cells(3, 4), curriculumWS.Cells(lastRow, 4)).Address & ",""" & key & _
+                                    """,'" & curriculumWS.name & "'!" & curriculumWS.Range(curriculumWS.Cells(3, 6), curriculumWS.Cells(lastRow, 6)).Address & ",""Completed (Equivalent)"")" _
+                                    & "+ COUNTIFS('" & curriculumWS.name & "'!" & curriculumWS.Range(curriculumWS.Cells(3, 4), curriculumWS.Cells(lastRow, 4)).Address & ",""" & key & _
+                                    """,'" & curriculumWS.name & "'!" & curriculumWS.Range(curriculumWS.Cells(3, 6), curriculumWS.Cells(lastRow, 6)).Address & ",""Completed (Refresh)"")"
+            
+            formula3 = "=" & .Cells(tableRow + 3, firstSiglumCol + i).Address & "/" & .Cells(tableRow + 2, firstSiglumCol + i).Address
+            Else
+            formula1 = "=COUNTIFS('" & curriculumWS.name & "'!" & curriculumWS.Range(curriculumWS.Cells(3, 4), curriculumWS.Cells(lastRow, 4)).Address & ",""" & key & "*"")"
+            
+            formula2 = "=COUNTIFS('" & curriculumWS.name & "'!" & curriculumWS.Range(curriculumWS.Cells(3, 4), curriculumWS.Cells(lastRow, 4)).Address & ",""" & key & _
+                                    "*"",'" & curriculumWS.name & "'!" & curriculumWS.Range(curriculumWS.Cells(3, 6), curriculumWS.Cells(lastRow, 6)).Address & ",""Completed"")" _
+                                    & "+ COUNTIFS('" & curriculumWS.name & "'!" & curriculumWS.Range(curriculumWS.Cells(3, 4), curriculumWS.Cells(lastRow, 4)).Address & ",""" & key & _
+                                    "*"",'" & curriculumWS.name & "'!" & curriculumWS.Range(curriculumWS.Cells(3, 6), curriculumWS.Cells(lastRow, 6)).Address & ",""Exempt"")" _
+                                    & "+ COUNTIFS('" & curriculumWS.name & "'!" & curriculumWS.Range(curriculumWS.Cells(3, 4), curriculumWS.Cells(lastRow, 4)).Address & ",""" & key & _
+                                    "*"",'" & curriculumWS.name & "'!" & curriculumWS.Range(curriculumWS.Cells(3, 6), curriculumWS.Cells(lastRow, 6)).Address & ",""Completed (Equivalent)"")" _
+                                    & "+ COUNTIFS('" & curriculumWS.name & "'!" & curriculumWS.Range(curriculumWS.Cells(3, 4), curriculumWS.Cells(lastRow, 4)).Address & ",""" & key & _
+                                    "*"",'" & curriculumWS.name & "'!" & curriculumWS.Range(curriculumWS.Cells(3, 6), curriculumWS.Cells(lastRow, 6)).Address & ",""Completed (Refresh)"")"
+            
+            formula3 = "=" & .Cells(tableRow + 3, firstSiglumCol + i).Address & "/" & .Cells(tableRow + 2, firstSiglumCol + i).Address
+            End If
+            
+            If key <> "" Then
+                .Cells(tableRow + 1, firstSiglumCol + i).Value = key
+            Else
+                .Cells(tableRow + 1, firstSiglumCol + i).Value = "Not assigned"
+            End If
+            
+            .Cells(tableRow + 2, firstSiglumCol + i).Formula = formula1
+            .Cells(tableRow + 3, firstSiglumCol + i).Formula = formula2
+            .Cells(tableRow + 4, firstSiglumCol + i).Formula = formula3
+            
+            
+        ' Aplicar el formato condicional a cada celda individualmente
+            Dim rng1 As Range
+            Dim rng2 As Range
+            Dim rng3 As Range
+            Dim rng4 As Range
+            Dim combinedRange As Range
+
+            ' Definir los rangos individuales
+                Set rng1 = Range("C6:L6")
+                Set rng2 = Range("C14:L14")
+                Set rng3 = Range("C22:L22")
+                Set rng4 = Range("C30:L30")
+
+            ' Combinar los rangos en un solo rango compuesto
+                Set combinedRange = Union(rng1, rng2, rng3, rng4)
+
+            ' Seleccionar el rango compuesto
+                combinedRange.Select
+                
+            Selection.FormatConditions.Add Type:=xlExpression, formula1:="=C6=1"
+            Selection.FormatConditions(Selection.FormatConditions.Count).SetFirstPriority
+            With Selection.FormatConditions(1).Interior
+                .PatternColorIndex = xlAutomatic
+                .Color = 5287936
+                .TintAndShade = 0
+            End With
+            Selection.FormatConditions(1).StopIfTrue = False
+            
+            
+        Next i
+        'Acumulado
+        .Cells(tableRow + 1, 3).Value = "TAOA(X)"
+        .Cells(tableRow + 2, 3).Formula = "=SUM(" & .Range(.Cells(tableRow + 2, 4), .Cells(tableRow + 2, siglumList.Count + 3)).Address & ")"
+        .Cells(tableRow + 3, 3).Formula = "=SUM(" & .Range(.Cells(tableRow + 3, 4), .Cells(tableRow + 3, siglumList.Count + 3)).Address & ")"
+        .Cells(tableRow + 4, 3).Formula = "=" & .Cells(tableRow + 3, 3).Address & "/" & .Cells(tableRow + 2, 3).Address
+        
+        'Porcentajes
+        .Range(.Cells(tableRow + 4, 3), .Cells(tableRow + 4, siglumList.Count + 3)).NumberFormat = "0.00%"
+        
+        'Formato
+        With .Range(.Cells(tableRow + 1, 3), .Cells(tableRow + 1, siglumList.Count + 3))
+            .Interior.Color = RGB(184, 204, 128)
+            .Font.Bold = True
+        End With
+        
+        With .Range(.Cells(tableRow + 4, 4), .Cells(tableRow + 4, siglumList.Count + 3))
+            .Interior.Color = RGB(149, 179, 215)
+        End With
+         
+        With .Cells(tableRow + 4, 3)
+            .Interior.Color = RGB(0, 176, 240)
+            .Font.Bold = True
+            .Font.Size = 14
+        End With
+        
+        With .Range(.Cells(tableRow, 2), .Cells(tableRow + 4, siglumList.Count + 3))
+            .Borders.LineStyle = xlContinuous
+            .Borders.Weight = xlMedium
+            .VerticalAlignment = xlCenter
+            .HorizontalAlignment = xlCenter
+        End With
+    End With
+End Sub
+
+'Function to exclude the 'Invisible' users from the third table in the Resumen tab.
+Sub excludeInvisibleFromSummaryTable(ByVal exportWB As Workbook, ByVal tabName As String, ByVal tableRow As Integer)
+    Dim siglumCount, siglumCountComplete As Dictionary
+    Dim firstSiglumCol, i As Integer
+    Dim siglum As String
+    
+    Set siglumCount = getSiglumInvisibleCountDictionary(exportWB.Sheets(tabName), "Employee ID", False)
+    Set siglumCountComplete = getSiglumInvisibleCountDictionary(exportWB.Sheets(tabName), "Employee ID", True)
+    
+    With exportWB.Sheets("Resumen")
+        firstSiglumCol = 4
+        For i = firstSiglumCol To firstSiglumCol + siglumCount.Count - 1
+            siglum = .Cells(tableRow + 1, i).Value
+            If siglumCount.Exists(siglum) Then
+                .Cells(tableRow + 2, i).Formula = .Cells(tableRow + 2, i).Formula & "-" & siglumCount(siglum)
+                .Cells(tableRow + 3, i).Formula = .Cells(tableRow + 3, i).Formula & "-" & siglumCountComplete(siglum)
+            End If
+        Next i
+    
+        With .Range(.Cells(tableRow, 1), .Cells(tableRow + 4, 1))
+            .Merge
+            .Value = "Bajas/Desplazados"
+            .WrapText = True
+            .Interior.Color = RGB(220, 230, 241)
+            .VerticalAlignment = xlCenter
+            .HorizontalAlignment = xlCenter
+            .BorderAround LineStyle:=xlContinuous, Weight:=xlMedium
+        End With
+    End With
+    
+End Sub
+
+Private Function sortStringArray(ByVal stringArray) As Variant
+    Dim i As Long, j As Long
+    Dim temp As String
+    
+    ' Bubble sort algorithm
+    For i = LBound(stringArray) To UBound(stringArray) - 1
+        For j = i + 1 To UBound(stringArray)
+            If stringArray(i) > stringArray(j) Then
+                ' Swap elements if out of order
+                temp = stringArray(i)
+                stringArray(i) = stringArray(j)
+                stringArray(j) = temp
+            End If
+        Next j
+    Next i
+    
+    sortStringArray = stringArray
+End Function
+
+Private Sub createSummaryTableAllLearning(ByVal courseName As String)
+    Dim summaryWS, dataWS As Worksheet
+    Dim tableRow As Integer
+
+    Dim siglumList As Dictionary
+    Dim lastRow As Integer
+    Dim formula1, formula2, formula3 As String
+    
+    Set siglumList = New Dictionary
+    siglumList.Add "TAOAA", 4
+    siglumList.Add "TAOAT", 5
+    siglumList.Add "TAOAF", 6
+    
+    Set dataWS = Sheets(1)
+    Set summaryWS = Application.Worksheets.Add
+    summaryWS.name = "Resumen"
+    tableRow = 2
+    lastRow = dataWS.Cells(Rows.Count, 1).End(xlUp).row
+    
+    
+    With summaryWS
+        .Cells(tableRow, 2).Value = courseName
+        With .Range(.Cells(tableRow, 2), .Cells(tableRow, siglumList.Count + 3))
+            .Merge
+            .Interior.Color = RGB(220, 230, 241)
+            .VerticalAlignment = xlCenter
+            .HorizontalAlignment = xlCenter
+            .BorderAround LineStyle:=xlContinuous, Weight:=xlMedium
+        End With
+        
+        .Cells(tableRow + 2, 2).Value = "POPULATION"
+        .Cells(tableRow + 3, 2).Value = "COMPLETED"
+        .Cells(tableRow + 4, 2).Value = "TOTAL"
+        
+        For Each key In siglumList.Keys
+            formula1 = "=COUNTIFS('" & dataWS.name & "'!" & dataWS.Range(dataWS.Cells(3, 6), dataWS.Cells(lastRow, 6)).Address & ",""*" & key & "*"")"
+            
+            formula2 = "=COUNTIFS('" & dataWS.name & "'!" & dataWS.Range(dataWS.Cells(3, 6), dataWS.Cells(lastRow, 6)).Address & ",""*" & key & _
+                                    "*"",'" & dataWS.name & "'!" & dataWS.Range(dataWS.Cells(3, 4), dataWS.Cells(lastRow, 4)).Address & ",""Completed"")" _
+                                    & "+ COUNTIFS('" & dataWS.name & "'!" & dataWS.Range(dataWS.Cells(3, 6), dataWS.Cells(lastRow, 6)).Address & ",""*" & key & _
+                                    "*"",'" & dataWS.name & "'!" & dataWS.Range(dataWS.Cells(3, 4), dataWS.Cells(lastRow, 4)).Address & ",""Exempt"")" _
+                                    & "+ COUNTIFS('" & dataWS.name & "'!" & dataWS.Range(dataWS.Cells(3, 6), dataWS.Cells(lastRow, 6)).Address & ",""*" & key & _
+                                    "*"",'" & dataWS.name & "'!" & dataWS.Range(dataWS.Cells(3, 4), dataWS.Cells(lastRow, 4)).Address & ",""Completed (Equivalent)"")" _
+                                    & "+ COUNTIFS('" & dataWS.name & "'!" & dataWS.Range(dataWS.Cells(3, 6), dataWS.Cells(lastRow, 6)).Address & ",""*" & key & _
+                                    "*"",'" & dataWS.name & "'!" & dataWS.Range(dataWS.Cells(3, 4), dataWS.Cells(lastRow, 4)).Address & ",""Completed (Refresh)"")"
+                                    
+                                    
+            formula3 = "=" & .Cells(tableRow + 3, siglumList(key)).Address & "/" & .Cells(tableRow + 2, siglumList(key)).Address
+            
+            .Cells(tableRow + 1, siglumList(key)).Value = key
+            .Cells(tableRow + 2, siglumList(key)).Formula = formula1
+            .Cells(tableRow + 3, siglumList(key)).Formula = formula2
+            .Cells(tableRow + 4, siglumList(key)).Formula = formula3
+            
+            
+    
+    Dim rng1 As Range
+    Dim rng2 As Range
+    Dim rng3 As Range
+    Dim rng4 As Range
+    Dim combinedRange As Range
+
+    ' Definir los rangos individuales
+    Set rng1 = Range("C6:L6")
+    Set rng2 = Range("C14:L14")
+    Set rng3 = Range("C22:L22")
+    Set rng4 = Range("C30:L30")
+
+    ' Combinar los rangos en un solo rango compuesto
+    Set combinedRange = Union(rng1, rng2, rng3, rng4)
+
+    ' Aplicar el formato condicional al rango compuesto
+    With combinedRange
+        .FormatConditions.Add Type:=xlExpression, formula1:="=C6=1"
+        .FormatConditions(.FormatConditions.Count).SetFirstPriority
+        With .FormatConditions(1).Interior
+            .PatternColorIndex = xlAutomatic
+            .Color = 5287936
+            .TintAndShade = 0
+        End With
+        .FormatConditions(1).StopIfTrue = False
+    End With
+
+            
+            
+        Next key
+        
+        'Acumulado
+        .Cells(tableRow + 1, 3).Value = "TAOA(X)"
+        .Cells(tableRow + 2, 3).Formula = "=SUM(" & .Range(.Cells(tableRow + 2, 4), .Cells(tableRow + 2, siglumList.Count + 3)).Address & ")"
+        .Cells(tableRow + 3, 3).Formula = "=SUM(" & .Range(.Cells(tableRow + 3, 4), .Cells(tableRow + 3, siglumList.Count + 3)).Address & ")"
+        .Cells(tableRow + 4, 3).Formula = "=" & .Cells(tableRow + 3, 3).Address & "/" & .Cells(tableRow + 2, 3).Address
+        
+        'Porcentajes
+        .Range(.Cells(tableRow + 4, 3), .Cells(tableRow + 4, siglumList.Count + 3)).NumberFormat = "0.00%"
+        
+        'Formato
+        With .Range(.Cells(tableRow + 1, 3), .Cells(tableRow + 1, siglumList.Count + 3))
+            .Interior.Color = RGB(184, 204, 128)
+            .Font.Bold = True
+        End With
+        
+        With .Range(.Cells(tableRow + 4, 4), .Cells(tableRow + 4, siglumList.Count + 3))
+            .Interior.Color = RGB(149, 179, 215)
+        End With
+         
+        With .Cells(tableRow + 4, 3)
+            .Interior.Color = RGB(0, 176, 240)
+            .Font.Bold = True
+            .Font.Size = 14
+        End With
+        
+        With .Range(.Cells(tableRow, 2), .Cells(tableRow + 4, siglumList.Count + 3))
+            .Borders.LineStyle = xlContinuous
+            .Borders.Weight = xlMedium
+            .VerticalAlignment = xlCenter
+            .HorizontalAlignment = xlCenter
+        End With
+    End With
+End Sub
+
+Private Sub createSummaryTableAssessment(courseName)
+    Dim summaryWS, dataWS As Worksheet
+    Dim tableRow As Integer
+
+    Dim siglumList As Dictionary
+    Dim lastRow, validColumn, siglumColumn As Integer
+    Dim formula1, formula2, formula3 As String
+
+    Set siglumList = New Dictionary
+    siglumList.Add "TAOA", 4
+    siglumList.Add "TAOAA", 5
+    siglumList.Add "TAOAE", 6
+    siglumList.Add "TAOAF", 7
+    siglumList.Add "TAOAI", 8
+    siglumList.Add "TAOAP", 9
+    siglumList.Add "TAOAT", 10
+    siglumList.Add "TAOAX", 11
+
+    Set dataWS = Sheets(1)
+    Set summaryWS = Application.Worksheets.Add
+    summaryWS.name = "Resumen"
+    tableRow = 2
+
+    lastRow = dataWS.Cells(Rows.Count, 1).End(xlUp).row
+    validColumn = dataWS.Rows(2).Find(What:="Is the assessment valid?", LookIn:=xlValues, LookAt:=xlWhole).column
+    siglumColumn = dataWS.Rows(2).Find(What:="Siglum", LookIn:=xlValues, LookAt:=xlWhole).column
+
+    With summaryWS
+        .Cells(tableRow, 2).Value = "Competency Assessment status " & Format(Date, "yyyy")
+        With .Range(.Cells(tableRow, 2), .Cells(tableRow, siglumList.Count + 3))
+            .Merge
+            .Interior.Color = RGB(220, 230, 241)
+            .VerticalAlignment = xlCenter
+            .HorizontalAlignment = xlCenter
+            .BorderAround LineStyle:=xlContinuous, Weight:=xlMedium
+        End With
+
+        .Cells(tableRow + 2, 2).Value = "POPULATION"
+        .Cells(tableRow + 3, 2).Value = "COMPLETED"
+        .Cells(tableRow + 4, 2).Value = "TOTAL"
+
+        For Each key In siglumList.Keys
+            If key <> "TAOA" Then
+                formula1 = "=COUNTIFS('" & dataWS.name & "'!" & dataWS.Range(dataWS.Cells(3, siglumColumn), dataWS.Cells(lastRow, siglumColumn)).Address & ",""" & key & "*"")"
+                formula2 = "=COUNTIFS('" & dataWS.name & "'!" & dataWS.Range(dataWS.Cells(3, siglumColumn), dataWS.Cells(lastRow, siglumColumn)).Address & ",""*" & key & _
+                                        "*"",'" & dataWS.name & "'!" & dataWS.Range(dataWS.Cells(3, validColumn), dataWS.Cells(lastRow, validColumn)).Address & ",""Yes"")"
+            Else
+                formula1 = "=COUNTIFS('" & dataWS.name & "'!" & dataWS.Range(dataWS.Cells(3, siglumColumn), dataWS.Cells(lastRow, siglumColumn)).Address & ",""" & key & """)"
+                formula2 = "=COUNTIFS('" & dataWS.name & "'!" & dataWS.Range(dataWS.Cells(3, siglumColumn), dataWS.Cells(lastRow, siglumColumn)).Address & ",""" & key & _
+                                        """,'" & dataWS.name & "'!" & dataWS.Range(dataWS.Cells(3, validColumn), dataWS.Cells(lastRow, validColumn)).Address & ",""Yes"")"
+            End If
+
+            formula3 = "=" & .Cells(tableRow + 3, siglumList(key)).Address & "/" & .Cells(tableRow + 2, siglumList(key)).Address
+
+            .Cells(tableRow + 1, siglumList(key)).Value = key
+            .Cells(tableRow + 2, siglumList(key)).Formula = formula1
+            .Cells(tableRow + 3, siglumList(key)).Formula = formula2
+            .Cells(tableRow + 4, siglumList(key)).Formula = formula3
+
+            ' Aplicar el formato condicional a cada celda individualmente
+        
+    Dim rng1 As Range
+    Dim rng2 As Range
+    Dim rng3 As Range
+    Dim rng4 As Range
+    Dim combinedRange As Range
+
+    ' Definir los rangos individuales
+    Set rng1 = Range("C6:L6")
+    Set rng2 = Range("C14:L14")
+    Set rng3 = Range("C22:L22")
+    Set rng4 = Range("C30:L30")
+
+    ' Combinar los rangos en un solo rango compuesto
+    Set combinedRange = Union(rng1, rng2, rng3, rng4)
+
+    ' Aplicar el formato condicional al rango compuesto
+    With combinedRange
+        .FormatConditions.Add Type:=xlExpression, formula1:="=C6=1"
+        .FormatConditions(.FormatConditions.Count).SetFirstPriority
+        With .FormatConditions(1).Interior
+            .PatternColorIndex = xlAutomatic
+            .Color = 5287936
+            .TintAndShade = 0
+        End With
+        .FormatConditions(1).StopIfTrue = False
+    End With
+        
+            
+        Next key
+
+        ' Acumulado
+        .Cells(tableRow + 1, 3).Value = "TAOA(X)"
+        .Cells(tableRow + 2, 3).Formula = "=SUM(" & .Range(.Cells(tableRow + 2, 4), .Cells(tableRow + 2, siglumList.Count + 3)).Address & ")"
+        .Cells(tableRow + 3, 3).Formula = "=SUM(" & .Range(.Cells(tableRow + 3, 4), .Cells(tableRow + 3, siglumList.Count + 3)).Address & ")"
+        .Cells(tableRow + 4, 3).Formula = "=" & .Cells(tableRow + 3, 3).Address & "/" & .Cells(tableRow + 2, 3).Address
+
+        ' Porcentajes
+        .Range(.Cells(tableRow + 4, 3), .Cells(tableRow + 4, siglumList.Count + 3)).NumberFormat = "0.00%"
+
+        ' Formato
+        With .Range(.Cells(tableRow + 1, 3), .Cells(tableRow + 1, siglumList.Count + 3))
+            .Interior.Color = RGB(184, 204, 128)
+            .Font.Bold = True
+        End With
+
+        With .Range(.Cells(tableRow + 4, 4), .Cells(tableRow + 4, siglumList.Count + 3))
+            .Interior.Color = RGB(149, 179, 215)
+        End With
+
+        With .Cells(tableRow + 4, 3)
+            .Interior.Color = RGB(0, 176, 240)
+            .Font.Bold = True
+            .Font.Size = 14
+        End With
+
+        With .Range(.Cells(tableRow, 2), .Cells(tableRow + 4, siglumList.Count + 3))
+            .Borders.LineStyle = xlContinuous
+            .Borders.Weight = xlMedium
+            .VerticalAlignment = xlCenter
+            .HorizontalAlignment = xlCenter
+        End With
+    End With
+End Sub
+
+
+Private Sub createSummaryTableTCO()
+    Dim summaryWS, dataWS As Worksheet
+    Dim tableRow As Integer
+
+    Dim siglumList As Dictionary
+    Dim lastRow, validColumn, siglumColumn As Integer
+    Dim formula1, formula2, formula3 As String
+    
+    Set siglumList = New Dictionary
+    siglumList.Add "TAOA", 4
+    siglumList.Add "TAOAA", 5
+    siglumList.Add "TAOAB", 6
+    siglumList.Add "TAOAC", 7
+    siglumList.Add "TAOAF", 8
+    siglumList.Add "TAOAI", 9
+    siglumList.Add "TAOAP", 10
+    siglumList.Add "TAOAT", 11
+    siglumList.Add "TAOAX", 12
+    
+    Set dataWS = Sheets(1)
+    Set summaryWS = Application.Worksheets.Add
+    summaryWS.name = "Resumen"
+    tableRow = 2
+    
+    lastRow = dataWS.Cells(Rows.Count, 1).End(xlUp).row
+    validColumn = dataWS.Rows(2).Find(What:="Training Record Status", LookIn:=xlValues, LookAt:=xlWhole).column
+    siglumColumn = dataWS.Rows(2).Find(What:="Supervisory Org 7", LookIn:=xlValues, LookAt:=xlWhole).column
+    
+    With summaryWS
+        .Cells(tableRow, 2).Value = "TCO " & Format(Date, "yyyy")
+        With .Range(.Cells(tableRow, 2), .Cells(tableRow, siglumList.Count + 3))
+            .Merge
+            .Interior.Color = RGB(220, 230, 241)
+            .VerticalAlignment = xlCenter
+            .HorizontalAlignment = xlCenter
+            .BorderAround LineStyle:=xlContinuous, Weight:=xlMedium
+        End With
+        
+        .Cells(tableRow + 2, 2).Value = "POPULATION"
+        .Cells(tableRow + 3, 2).Value = "COMPLETED"
+        .Cells(tableRow + 4, 2).Value = "TOTAL"
+        
+        For Each key In siglumList.Keys
+            If key <> "TAOA" Then
+                formula1 = "=COUNTIFS('" & dataWS.name & "'!" & dataWS.Range(dataWS.Cells(3, siglumColumn), dataWS.Cells(lastRow, siglumColumn)).Address & ",""" & key & "*"")"
+                formula2 = "=COUNTIFS('" & dataWS.name & "'!" & dataWS.Range(dataWS.Cells(3, siglumColumn), dataWS.Cells(lastRow, siglumColumn)).Address & ",""*" & key & _
+                                        "*"",'" & dataWS.name & "'!" & dataWS.Range(dataWS.Cells(3, validColumn), dataWS.Cells(lastRow, validColumn)).Address & ",""Completed"")"
+            Else
+                formula1 = "=COUNTIFS('" & dataWS.name & "'!" & dataWS.Range(dataWS.Cells(3, siglumColumn), dataWS.Cells(lastRow, siglumColumn)).Address & ",""" & key & """)"
+                formula2 = "=COUNTIFS('" & dataWS.name & "'!" & dataWS.Range(dataWS.Cells(3, siglumColumn), dataWS.Cells(lastRow, siglumColumn)).Address & ",""" & key & _
+                                        """,'" & dataWS.name & "'!" & dataWS.Range(dataWS.Cells(3, validColumn), dataWS.Cells(lastRow, validColumn)).Address & ",""Completed"")"
+            End If
+                                    
+            formula3 = "=" & .Cells(tableRow + 3, siglumList(key)).Address & "/" & .Cells(tableRow + 2, siglumList(key)).Address
+            
+            .Cells(tableRow + 1, siglumList(key)).Value = key
+            .Cells(tableRow + 2, siglumList(key)).Formula = formula1
+            .Cells(tableRow + 3, siglumList(key)).Formula = formula2
+            .Cells(tableRow + 4, siglumList(key)).Formula = formula3
+            
+            ' Aplicar el formato condicional a cada celda individualmente
+            Range("C6:L6").Select
+            Selection.FormatConditions.Add Type:=xlExpression, formula1:="=C6=1"
+            Selection.FormatConditions(Selection.FormatConditions.Count).SetFirstPriority
+            With Selection.FormatConditions(1).Interior
+                .PatternColorIndex = xlAutomatic
+                .Color = 5287936
+                .TintAndShade = 0
+            End With
+            Selection.FormatConditions(1).StopIfTrue = False
+            
+        Next key
+        
+        'Acumulado
+        .Cells(tableRow + 1, 3).Value = "TAOA(X)"
+        .Cells(tableRow + 2, 3).Formula = "=SUM(" & .Range(.Cells(tableRow + 2, 4), .Cells(tableRow + 2, siglumList.Count + 3)).Address & ")"
+        .Cells(tableRow + 3, 3).Formula = "=SUM(" & .Range(.Cells(tableRow + 3, 4), .Cells(tableRow + 3, siglumList.Count + 3)).Address & ")"
+        .Cells(tableRow + 4, 3).Formula = "=" & .Cells(tableRow + 3, 3).Address & "/" & .Cells(tableRow + 2, 3).Address
+        
+        'Porcentajes
+        .Range(.Cells(tableRow + 4, 3), .Cells(tableRow + 4, siglumList.Count + 3)).NumberFormat = "0.00%"
+        
+        'Formato
+        With .Range(.Cells(tableRow + 1, 3), .Cells(tableRow + 1, siglumList.Count + 3))
+            .Interior.Color = RGB(184, 204, 128)
+            .Font.Bold = True
+        End With
+        
+        With .Range(.Cells(tableRow + 4, 4), .Cells(tableRow + 4, siglumList.Count + 3))
+            .Interior.Color = RGB(149, 179, 215)
+        End With
+         
+        With .Cells(tableRow + 4, 3)
+            .Interior.Color = RGB(0, 176, 240)
+            .Font.Bold = True
+            .Font.Size = 14
+        End With
+        
+        With .Range(.Cells(tableRow, 2), .Cells(tableRow + 4, siglumList.Count + 3))
+            .Borders.LineStyle = xlContinuous
+            .Borders.Weight = xlMedium
+            .VerticalAlignment = xlCenter
+            .HorizontalAlignment = xlCenter
+        End With
+    End With
+End Sub
+
+
+Private Function getSiglumList(ByVal ws As Worksheet, ByRef lastRow As Integer) As Dictionary
+    Dim i As Integer
+    Dim position As Integer
+    Dim Auxdictionary As Dictionary
+    Set Auxdictionary = New Dictionary
+
+    lastRow = ws.Cells(Rows.Count, 1).End(xlUp).row
+
+    position = 4 ' Columna de la tabla resumen donde se muestra cada siglum
+    For i = 3 To lastRow
+        Dim siglum As String
+        siglum = ws.Cells(i, 4).Value
+
+        ' Verificar si el siglum tiene más de 5 letras (para evitar que cuente TAOAIC)
+        If Len(siglum) <= 5 And Not Auxdictionary.Exists(siglum) Then
+            Auxdictionary.Add siglum, position
+            position = position + 1
+        End If
+    Next i
+
+    Set getSiglumList = Auxdictionary
+End Function
+
+Private Sub combineColumns(sh As Worksheet, c1 As Integer, c2 As Integer)
+    Dim lastRow As Integer
+    Dim i As Integer
+    
+    With sh
+        ' Find the last row with data
+        lastRow = .Cells(.Rows.Count, 1).End(xlUp).row
+    
+        ' Loop through each row and combine columns c1 and c2
+        For i = 3 To lastRow
+            If .Cells(i, c2).Value <> "" And .Cells(i, c1).Value = "" Then
+                'Replace column c1 with c2
+                .Cells(i, c1).Value = .Cells(i, c2).Value
+            End If
+        Next i
+    
+        ' Delete column
+        .Columns(c2).Delete Shift:=xlToLeft
+    End With
+End Sub
+
+Private Sub filterAndRemoveRows(ByVal column As String, ByVal filter As String, ByVal inclusive As Boolean)
+    Dim lastRow As Long
+    Dim filterColumn As Range
+
+    ' Set the column range to filter
+    Set filterColumn = Rows(2).Find(column, LookIn:=xlValues, LookAt:=xlWhole)
+
+    ' Find the last row in the column
+    lastRow = Cells(Rows.Count, filterColumn.column).End(xlUp).row
+    
+    If inclusive Then
+        ' Apply the filter
+        filterColumn.AutoFilter Field:=filterColumn.column, Criteria1:=filter
+    Else
+        ' Apply the inverse filter
+        filterColumn.AutoFilter Field:=filterColumn.column, Criteria1:="<>" & filter & "*"
+    End If
+
+    ' Delete visible rows (excluding header)
+    ActiveSheet.AutoFilter.Range.Offset(1, 0).Resize(lastRow - 1, 1).SpecialCells(xlCellTypeVisible).EntireRow.Delete
+    ActiveSheet.ShowAllData
+
+    ' Turn off the filter
+    AutoFilterMode = False
+End Sub
+
+Private Sub filterArrayAndRemoveRows(ByVal column As String, ByVal filter As Variant)
+    Dim lastRow, filterColumn, i, j As Long
+    Dim userSiglum
+    Dim removeRow As Boolean
+
+    ' Set the column range to filter
+    filterColumn = Rows(2).Find(column, LookIn:=xlValues, LookAt:=xlWhole).column
+
+    ' Find the last row in the column
+    lastRow = Cells(Rows.Count, filterColumn).End(xlUp).row
+
+    i = 3
+    Do While i <= lastRow
+        userSiglum = Cells(i, filterColumn).Value
+        removeRow = True
+        For j = 0 To UBound(filter)
+            If InStr(1, userSiglum, filter(j), vbTextCompare) Then
+                removeRow = False
+                Exit For
+            End If
+        Next j
+        
+        If removeRow Then
+            Cells(i, filterColumn).EntireRow.Delete
+            lastRow = lastRow - 1
+        Else
+            i = i + 1
+        End If
+    Loop
+End Sub
+
+Public Sub insertCourseRow(ByVal course As String)
+    Rows(1).Insert Shift:=xlDown
+    Cells(1, 1).Value = course
+End Sub
+
+Private Function mapFolders() As Dictionary
+    Dim foldersDictionary As Dictionary
+    Dim lastRow, i
+    
+    Set foldersDictionary = New Dictionary
+    
+    With ThisWorkbook.Sheets("Ejecutar")
+        lastRow = .Cells(.Rows.Count, 7).End(xlUp).row
+        
+        For i = 2 To lastRow
+            If FormCurriculums.CheckBoxSaveToFolder Then
+                foldersDictionary.Add .Cells(i, 7).Value, Array(.Cells(i, 8).Value & "\", .Cells(i, 9).Value & "\")
+            Else
+                foldersDictionary.Add .Cells(i, 7).Value, Array(.Cells(i, 8).Value & "\", "\")
+            End If
+        Next i
+    End With
+    
+    Set mapFolders = foldersDictionary
+End Function
+
+Private Function openMostRecentWorkbook(ByVal folderPath As String, ByVal fileFilter As String) As String
+    Dim fileName As String
+    Dim mostRecentDate As Date
+    Dim currentFileDate As Date
+
+    ' Initialize variables
+    mostRecentDate = 0
+    fileName = Dir(folderPath & fileFilter)
+
+    ' Loop through files in the folder
+    Do While fileName <> ""
+        ' Get the last modified date of the current file
+        currentFileDate = FileDateTime(folderPath & fileName)
+
+        ' Check if the current file is more recent than the previously found file
+        If currentFileDate > mostRecentDate Then
+            mostRecentDate = currentFileDate
+            mostRecentWorkbook = fileName
+        End If
+
+        ' Move to the next file
+        fileName = Dir
+    Loop
+
+    ' Check if a workbook was found
+    If mostRecentWorkbook <> "" Then
+        ' Open the most recent workbook
+        openMostRecentWorkbook = folderPath & mostRecentWorkbook
+    Else
+        MsgBox "No hay un workbook válido en la ruta: " & folderPath, vbExclamation
+        openMostRecentWorkbook = ""
+    End If
+End Function
+
+Public Sub highlightColumns(ByVal exportWB As Workbook, ByVal curriculum As String)
+    Dim column
+    Dim sht As Worksheet
+    
+    column = 0
+    
+    Select Case curriculum
+        Case NAME_HS:
+            Set sht = exportWB.Sheets("Reporte BC")
+            column = sht.Rows(2).Find("EMERGENCY TEAMS TRAINING - Status", LookIn:=xlValues, LookAt:=xlWhole).column
+            sht.Cells(2, column).Interior.Color = RGB(255, 255, 0)
+            column = sht.Rows(2).Find("EPI FIRST RESPONSE OFFICER Spain - Status", LookIn:=xlValues, LookAt:=xlWhole).column
+            sht.Cells(2, column).Interior.Color = RGB(255, 255, 0)
+    End Select
+
+End Sub
+
+Public Sub exportWorkbook(ByVal exportWB As Workbook, ByVal curriculum As String, ByVal name As String)
+    Dim folderDictionary, filePath
+    Set folderDictionary = mapFolders
+     
+    If folderDictionary(curriculum)(1) = "\" Then
+        filePath = ThisWorkbook.Path & "\" & name
+    Else
+        filePath = folderDictionary(curriculum)(1) & name
+    End If
+    
+    On Error Resume Next
+    'Production path
+    exportWB.SaveAs fileName:=filePath
+    
+    'Development path
+    'exportWB.SaveAs fileName:="\\Spi60001.eadscasa.casa.corp\a400m san pablo\Lean_Manufacturing\10.- PCM\28. PCM\Development enviroment\Macros\Curriculums"
+    On Error GoTo 0
+End Sub
+
+
+Public Function eliminarAcentosYSaltosDeLinea(ByVal cadenaAConvertir As String) As String
+
+    cadenaAConvertir = Replace(cadenaAConvertir, "Á", "A")
+    cadenaAConvertir = Replace(cadenaAConvertir, "É", "E")
+    cadenaAConvertir = Replace(cadenaAConvertir, "Í", "I")
+    cadenaAConvertir = Replace(cadenaAConvertir, "Ó", "O")
+    cadenaAConvertir = Replace(cadenaAConvertir, "Ú", "U")
+    cadenaAConvertir = Replace(cadenaAConvertir, Chr(10), "")
+    eliminarAcentosYSaltosDeLinea = cadenaAConvertir
+    
+End Function
+
