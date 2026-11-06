@@ -1,0 +1,455 @@
+Private Sub CheckBoxSaveToFolder_Click()
+
+End Sub
+
+Private Sub UserForm_Initialize()
+
+    Me.Caption = "Seleccionar Archivos Excel"
+    Me.Width = 400
+    Me.Height = 190
+
+    Me.StartUpPosition = 0
+    On Error Resume Next
+    Me.Left = Application.Left + (Application.Width - Me.Width) / 2
+    Me.Top = Application.Top + (Application.Height - Me.Height) / 2
+    On Error GoTo 0
+
+
+    ComboBoxCurriculum.AddItem "Ejecutar todos los curriculums"
+    ComboBoxCurriculum.AddItem "Health & Safety"
+    ComboBoxCurriculum.AddItem "Export Control"
+    ComboBoxCurriculum.AddItem "Assessment"
+    ComboBoxCurriculum.AddItem "TCO"
+    ComboBoxCurriculum.AddItem "POA"
+    ComboBoxCurriculum.AddItem "EHS"
+    ComboBoxCurriculum.AddItem "No Show & Late cancellation"
+    ComboBoxCurriculum.AddItem "FOD"
+    ComboBoxCurriculum.AddItem "Espacios confinados"
+    ComboBoxCurriculum.AddItem "Formación de Mantas"
+    ComboBoxCurriculum.AddItem "Crisis Management"
+    ComboBoxCurriculum.AddItem "Safety Culture"
+        'Insertado
+    ComboBoxCurriculum.AddItem "Aviation Safety"
+End Sub
+' Lanzar macro
+Private Sub Btn_Run_Click()
+
+    Dim auxWB As Workbook
+    Dim uselessAplicationVariable As String
+    
+    Dim rutaWbMacroEHS As String
+    Dim rutaCarpetaWbFicheroFuenteEHS As String
+    
+    Dim rutaWbMacroFod As String
+    Dim rutaCarpetaWbFicheroFuenteFod As String
+     
+    Dim rutaWbMacroEspaciosConfinados As String
+    Dim rutaCarpetaWbFicheroFuenteEspaciosConfinados As String
+     
+    Dim rutaWbMacroLateAndNoShowCancellation  As String
+    Dim rutaCarpetaWbFicheroFuenteLateAndNoShowCancellation As String
+    
+    Dim rutaWbMacroMantas As String
+    Dim rutaCarpetaWbFicheroFuenteMantas As String
+    
+    Dim rutaWbCrisisManagement As String
+    Dim rutaCarpetaWbFicheroFuenteCrisisManagement As String
+    
+    Dim rutaWbSafetyCulture As String
+    Dim rutaCarpetaWbFicheroFuenteSafetyCulture As String
+    
+    'Insertado
+    Dim rutaWbMacroAviationSafety As String
+    Dim rutaCarpetaWbFicheroFuenteAviationSafety As String
+    
+    FormCurriculums.Hide
+    FormProgress.Show vbModeless
+    
+    '---------------------------------------------------
+    ' UNIFICAR ALL LEARNING
+     '---------------------------------------------------
+     
+     'Call updateAllLearning
+    
+    '---------------------------------------------------
+    'EJECUTAR TODOS LOS CURRICULUMS
+     '---------------------------------------------------
+     
+    If ComboBoxCurriculum.Value = "Ejecutar todos los curriculums" Then
+        
+        FormProgress.labelProgressMessage = "Ejecutando curriculum Health & Safety"
+        Set auxWB = analizeFileCU_HS
+        Call checkCloseWB(auxWB)
+        
+        FormProgress.labelProgressMessage = "Ejecutando curriculum Export Control"
+        Set auxWB = analizeFileCU_EC
+        Call checkCloseWB(auxWB)
+        
+        FormProgress.labelProgressMessage = "Ejecutando curriculum Assessment"
+        Set auxWB = analizeFileAssessment
+        Call checkCloseWB(auxWB)
+        
+        FormProgress.labelProgressMessage = "Ejecutando curriculum TCO"
+        Set auxWB = analizeFileTCO
+        Call checkCloseWB(auxWB)
+        
+        FormProgress.labelProgressMessage = "Ejecutando curriculum POA"
+        Set auxWB = analizeFilePOA
+        Call checkCloseWB(auxWB)
+        
+        'Insertado
+        FormProgress.labelProgressMessage = "Ejecutando curriculum Aviation Safety"
+        Set auxWB = analizeFileAS
+        Call checkCloseWB(auxWB)
+        
+        Set auxWB = Nothing
+        
+        'EHS
+        
+        FormProgress.labelProgressMessage = "Ejecutando curriculum EHS"
+        
+        rutaWbMacroEHS = ThisWorkbook.Sheets("Ejecutar").Cells(7, "J").Value
+        rutaCarpetaWbFicheroFuenteEHS = ThisWorkbook.Sheets("Ejecutar").Cells(7, "H").Value
+        
+        On Error Resume Next
+        Set auxWB = Workbooks("1-EHS MACRO.xlsm")
+        On Error GoTo 0
+    
+        If auxWB Is Nothing Then
+            On Error Resume Next ' Ignorar errores al abrir
+            Set auxWB = Workbooks.Open(rutaWbMacroEHS)
+            On Error GoTo 0 ' Volver a activar la gestión de errores
+        End If
+            
+        uselessAplicationVariable = Application.run("'1-EHS MACRO.xlsm'!GenerarInformeEHS", rutaCarpetaWbFicheroFuenteEHS)
+        
+        Set auxWB = Nothing
+            
+        'FOD
+        
+        FormProgress.labelProgressMessage = "Ejecutando curriculum FOD"
+        
+        rutaWbMacroFod = ThisWorkbook.Sheets("Ejecutar").Cells(9, "J").Value
+        rutaCarpetaWbFicheroFuenteFod = ThisWorkbook.Sheets("Ejecutar").Cells(9, "H").Value
+        
+        On Error Resume Next
+        Set auxWB = Workbooks("Macro FOD.xlsm")
+        On Error GoTo 0
+    
+        If auxWB Is Nothing Then
+            On Error Resume Next ' Ignorar errores al abrir
+            Set auxWB = Workbooks.Open(rutaWbMacroFod)
+            On Error GoTo 0 ' Volver a activar la gestión de errores
+        End If
+            
+        uselessAplicationVariable = Application.run("'Macro FOD.xlsm'!GenerarInformeFOD", rutaCarpetaWbFicheroFuenteFod)
+        
+        Set auxWB = Nothing
+            
+        'No Show & Late cancellation
+        
+        FormProgress.labelProgressMessage = "Ejecutando curriculum No Show & Late cancellation"
+        
+        rutaWbMacroLateAndNoShowCancellation = ThisWorkbook.Sheets("Ejecutar").Cells(8, "J").Value
+        rutaCarpetaWbFicheroFuenteLateAndNoShowCancellation = ThisWorkbook.Sheets("Ejecutar").Cells(8, "H").Value
+        
+        On Error Resume Next
+        Set auxWB = Workbooks("Macro No Show & Late Cancellation.xlsm")
+        On Error GoTo 0
+    
+        If auxWB Is Nothing Then
+            On Error Resume Next ' Ignorar errores al abrir
+            Set auxWB = Workbooks.Open(rutaWbMacroLateAndNoShowCancellation)
+            On Error GoTo 0 ' Volver a activar la gestión de errores
+        End If
+        
+        uselessAplicationVariable = Application.run("'Macro No Show & Late Cancellation.xlsm'!GenerarInformeNoShowAndLateCancellation", rutaCarpetaWbFicheroFuenteLateAndNoShowCancellation)
+        
+        Set auxWB = Nothing
+
+        'Espacios confinados
+                
+        FormProgress.labelProgressMessage = "Ejecutando curriculum Espacios confinados"
+        
+        rutaWbMacroEspaciosConfinados = ThisWorkbook.Sheets("Ejecutar").Cells(10, "J").Value
+        rutaCarpetaWbFicheroFuenteEspaciosConfinados = ThisWorkbook.Sheets("Ejecutar").Cells(10, "H").Value
+
+        On Error Resume Next
+        Set auxWB = Workbooks("Macro No Show & Late Cancellation.xlsm")
+        On Error GoTo 0
+    
+        If auxWB Is Nothing Then
+            Set auxWB = Workbooks.Open(rutaWbMacroEspaciosConfinados)
+            On Error GoTo 0 ' Volver a activar la gestión de errores
+        End If
+        
+        uselessAplicationVariable = Application.run("'Macro TAOAA, TAOAAF y TAOAT Espacios confinados.xlsm'!GenerarInformeEspaciosConfinados", rutaCarpetaWbFicheroFuenteEspaciosConfinados)
+        
+        Set auxWB = Nothing
+        
+        
+        'Nordicos con pelos
+        
+        FormProgress.labelProgressMessage = "Ejecutando curriculum Formación de Mantas"
+        
+        rutaWbMacroMantas = ThisWorkbook.Sheets("Ejecutar").Cells(11, "J").Value
+        rutaCarpetaWbFicheroFuenteMantas = ThisWorkbook.Sheets("Ejecutar").Cells(11, "H").Value
+        
+        On Error Resume Next
+        Set auxWB = Workbooks("Macro TAOAA, TAOAAF y TAOAT Formación de Mantas.xlsm")
+        On Error GoTo 0
+    
+        If auxWB Is Nothing Then
+            On Error Resume Next ' Ignorar errores al abrir
+            Set auxWB = Workbooks.Open(rutaWbMacroMantas)
+            On Error GoTo 0 ' Volver a activar la gestión de errores
+        End If
+            
+        uselessAplicationVariable = Application.run("'Macro TAOAA, TAOAAF y TAOAT Formación de Mantas.xlsm'!GenerarInformeCursoPrevencionDanioMantas", rutaCarpetaWbFicheroFuenteMantas)
+        
+        Set auxWB = Nothing
+        
+        
+         'Crisis Management
+        
+        FormProgress.labelProgressMessage = "Ejecutando curriculum Crisis Management"
+        
+        rutaWbMacroCrisisManagement = ThisWorkbook.Sheets("Ejecutar").Cells(12, "J").Value
+        rutaCarpetaWbFicheroFuenteCrisisManagement = ThisWorkbook.Sheets("Ejecutar").Cells(12, "H").Value
+        
+        On Error Resume Next
+        Set auxWB = Workbooks("Macro Crisis Management.xlsm")
+        On Error GoTo 0
+    
+        If auxWB Is Nothing Then
+            On Error Resume Next ' Ignorar errores al abrir
+            Set auxWB = Workbooks.Open(rutaWbMacroCrisisManagement)
+            On Error GoTo 0 ' Volver a activar la gestión de errores
+        End If
+            
+        uselessAplicationVariable = Application.run("'Macro Crisis Management.xlsm'!GenerarInformeCrisisManagement", rutaCarpetaWbFicheroFuenteSafetyCulture)
+        
+        Set auxWB = Nothing
+        
+        
+        'Safety Culture
+        
+        FormProgress.labelProgressMessage = "Ejecutando curriculum Safety Culture"
+        
+        rutaWbMacroSafetyCulture = ThisWorkbook.Sheets("Ejecutar").Cells(13, "J").Value
+        rutaCarpetaWbFicheroFuenteSafetyCulture = ThisWorkbook.Sheets("Ejecutar").Cells(13, "H").Value
+        
+        On Error Resume Next
+        Set auxWB = Workbooks("Macro Safety Culture.xlsm")
+        On Error GoTo 0
+    
+        If auxWB Is Nothing Then
+            On Error Resume Next ' Ignorar errores al abrir
+            Set auxWB = Workbooks.Open(rutaWbMacroSafetyCulture)
+            On Error GoTo 0 ' Volver a activar la gestión de errores
+        End If
+            
+        uselessAplicationVariable = Application.run("'Macro Safety Culture.xlsm'!Main.Main", rutaCarpetaWbFicheroFuenteSafetyCulture)
+        
+        Set auxWB = Nothing
+        
+        'Aviation Safety
+        
+                
+        FormProgress.labelProgressMessage = "Ejecutando curriculum Aviation Safety"
+        
+        rutaWbMacroAviationSafety = ThisWorkbook.Sheets("Ejecutar").Cells(14, "J").Value
+        rutaCarpetaWbFicheroFuenteAviationSafety = ThisWorkbook.Sheets("Ejecutar").Cells(14, "H").Value
+        
+        On Error Resume Next
+        Set auxWB = Workbooks("Macro Aviation_Safety.xlsm")
+        On Error GoTo 0
+    
+        If auxWB Is Nothing Then
+            On Error Resume Next ' Ignorar errores al abrir
+            Set auxWB = Workbooks.Open(rutaWbMacroAviationSafety)
+            On Error GoTo 0 ' Volver a activar la gestión de errores
+        End If
+            
+        uselessAplicationVariable = Application.run("'Macro Aviation_Safety.xlsm'!Main.Main", rutaCarpetaWbFicheroFuenteAviationSafety)
+        
+        Set auxWB = Nothing
+        
+    '--------------------------------------------------------
+    'EJECUTAR CURRICULUMS DE FORMA INDIVIDUAL
+    '---------------------------------------------------------
+    Else
+        Select Case ComboBoxCurriculum.Value
+            Case "Health & Safety":
+                Set auxWB = analizeFileCU_HS
+            Case "Quality Essentials":
+                Set auxWB = analizeFileCU_QE
+            Case "Export Control":
+                Set auxWB = analizeFileCU_EC
+            Case "Assessment":
+                Set auxWB = analizeFileAssessment
+            Case "TCO":
+                Set auxWB = analizeFileTCO
+            Case "POA":
+                Set auxWB = analizeFilePOA
+            Case "EHS":
+
+                rutaWbMacroEHS = ThisWorkbook.Sheets("Ejecutar").Cells(7, "J").Value
+                rutaCarpetaWbFicheroFuenteEHS = ThisWorkbook.Sheets("Ejecutar").Cells(7, "H").Value
+                
+                On Error Resume Next
+                Set auxWB = Workbooks("1-EHS MACRO.xlsm")
+                On Error GoTo 0
+            
+                If auxWB Is Nothing Then
+                    On Error Resume Next ' Ignorar errores al abrir
+                    Set auxWB = Workbooks.Open(rutaWbMacroEHS)
+                    On Error GoTo 0 ' Volver a activar la gestión de errores
+                End If
+                    
+                uselessAplicationVariable = Application.run("'1-EHS MACRO.xlsm'!GenerarInformeEHS", rutaCarpetaWbFicheroFuenteEHS)
+            
+            Case "FOD":
+                
+                rutaWbMacroFod = ThisWorkbook.Sheets("Ejecutar").Cells(9, "J").Value
+                rutaCarpetaWbFicheroFuenteFod = ThisWorkbook.Sheets("Ejecutar").Cells(9, "H").Value
+                
+                On Error Resume Next
+                Set auxWB = Workbooks("Macro FOD.xlsm")
+                On Error GoTo 0
+            
+                If auxWB Is Nothing Then
+                    On Error Resume Next ' Ignorar errores al abrir
+                    Set auxWB = Workbooks.Open(rutaWbMacroFod)
+                    On Error GoTo 0 ' Volver a activar la gestión de errores
+                End If
+                    
+                uselessAplicationVariable = Application.run("'Macro FOD.xlsm'!GenerarInformeFOD", rutaCarpetaWbFicheroFuenteFod)
+            
+            Case "No Show & Late cancellation":
+            
+                rutaWbMacroLateAndNoShowCancellation = ThisWorkbook.Sheets("Ejecutar").Cells(8, "J").Value
+                rutaCarpetaWbFicheroFuenteLateAndNoShowCancellation = ThisWorkbook.Sheets("Ejecutar").Cells(8, "H").Value
+                
+                On Error Resume Next
+                Set auxWB = Workbooks("Macro No Show & Late Cancellation.xlsm")
+                On Error GoTo 0
+            
+                If auxWB Is Nothing Then
+                    On Error Resume Next ' Ignorar errores al abrir
+                    Set auxWB = Workbooks.Open(rutaWbMacroLateAndNoShowCancellation)
+                    On Error GoTo 0 ' Volver a activar la gestión de errores
+                End If
+                
+                 uselessAplicationVariable = Application.run("'Macro No Show & Late Cancellation.xlsm'!GenerarInformeNoShowAndLateCancellation", rutaCarpetaWbFicheroFuenteLateAndNoShowCancellation)
+
+                Case "Espacios confinados":
+                
+                    rutaWbMacroEspaciosConfinados = ThisWorkbook.Sheets("Ejecutar").Cells(10, "J").Value
+                    rutaCarpetaWbFicheroFuenteEspaciosConfinados = ThisWorkbook.Sheets("Ejecutar").Cells(10, "H").Value
+
+                    On Error Resume Next
+                    Set auxWB = Workbooks("Macro No Show & Late Cancellation.xlsm")
+                    On Error GoTo 0
+                
+                    If auxWB Is Nothing Then
+                        Set auxWB = Workbooks.Open(rutaWbMacroEspaciosConfinados)
+                        On Error GoTo 0 ' Volver a activar la gestión de errores
+                    End If
+                    
+                    uselessAplicationVariable = Application.run("'Macro TAOAA, TAOAAF y TAOAT Espacios confinados.xlsm'!GenerarInformeEspaciosConfinados", rutaCarpetaWbFicheroFuenteEspaciosConfinados)
+                    
+                Case "Formación de Mantas":
+                
+                    rutaWbMacroMantas = ThisWorkbook.Sheets("Ejecutar").Cells(11, "J").Value
+                    rutaCarpetaWbFicheroFuenteMantas = ThisWorkbook.Sheets("Ejecutar").Cells(11, "H").Value
+
+                    On Error Resume Next
+                    Set auxWB = Workbooks("Macro TAOAA, TAOAAF y TAOAT Formación de Mantas.xlsm")
+                    On Error GoTo 0
+                
+                    If auxWB Is Nothing Then
+                        Set auxWB = Workbooks.Open(rutaWbMacroMantas)
+                        On Error GoTo 0 ' Volver a activar la gestión de errores
+                    End If
+                    
+                    uselessAplicationVariable = Application.run("'Macro TAOAA, TAOAAF y TAOAT Formación de Mantas.xlsm'!GenerarInformeCursoPrevencionDanioMantas", rutaCarpetaWbFicheroFuenteMantas)
+                    
+                Case "Crisis Management":
+                
+                    rutaWbMacroCrisisManagement = ThisWorkbook.Sheets("Ejecutar").Cells(12, "J").Value
+                    rutaCarpetaWbFicheroFuenteCrisisManagement = ThisWorkbook.Sheets("Ejecutar").Cells(12, "H").Value
+
+                    On Error Resume Next
+                    Set auxWB = Workbooks("Macro Crisis Management.xlsm")
+                    On Error GoTo 0
+                
+                    If auxWB Is Nothing Then
+                        Set auxWB = Workbooks.Open(rutaWbMacroCrisisManagement)
+                        On Error GoTo 0 ' Volver a activar la gestión de errores
+                    End If
+                    
+                    uselessAplicationVariable = Application.run("'Macro Crisis Management.xlsm'!GenerarInformeCrisisManagement", rutaCarpetaWbFicheroFuenteCrisisManagement)
+        
+        
+                Case "Safety Culture":
+        
+                    rutaWbMacroSafetyCulture = ThisWorkbook.Sheets("Ejecutar").Cells(13, "J").Value
+                    rutaCarpetaWbFicheroFuenteSafetyCulture = ThisWorkbook.Sheets("Ejecutar").Cells(13, "H").Value
+                    
+                    On Error Resume Next
+                    Set auxWB = Workbooks("Macro Safety Culture.xlsm")
+                    On Error GoTo 0
+                
+                    If auxWB Is Nothing Then
+                        Set auxWB = Workbooks.Open(rutaWbMacroSafetyCulture)
+                        On Error GoTo 0 ' Volver a activar la gestión de errores
+                    End If
+                        
+                    uselessAplicationVariable = Application.run("'Macro Safety Culture.xlsm'!GenerarInformeCursoSafetyCulture", rutaCarpetaWbFicheroFuenteSafetyCulture)
+                    
+                    Set auxWB = Nothing
+        
+        'Añadido
+        
+                Case "Aviation Safety":
+        
+                    rutaWbMacroAviationSafety = ThisWorkbook.Sheets("Ejecutar").Cells(14, "J").Value
+                    rutaCarpetaWbFicheroFuenteAviationSafety = ThisWorkbook.Sheets("Ejecutar").Cells(14, "H").Value
+                    
+                    On Error Resume Next
+                    Set auxWB = Workbooks("Macro Aviation_Safety.xlsm")
+                    On Error GoTo 0
+                
+                    If auxWB Is Nothing Then
+                        Set auxWB = Workbooks.Open(rutaWbMacroAviationSafety)
+                        On Error GoTo 0 ' Volver a activar la gestión de errores
+                    End If
+                        
+                    uselessAplicationVariable = Application.run("'Macro Aviation_Safety.xlsm'!GenerarInformeCursoAviationSafety", rutaCarpetaWbFicheroFuenteAviationSafety)
+                    
+                    Set auxWB = Nothing
+        
+        
+        End Select
+        Call checkCloseWB(auxWB)
+    End If
+    
+    FormProgress.labelProgressMessage = "Ejecución finalizada"
+    FormProgress.Hide
+    
+End Sub
+Private Sub checkCloseWB(ByVal wb As Workbook)
+    If CheckBoxCloseFiles And Not wb Is Nothing Then
+        wb.Close
+    End If
+End Sub
+Private Sub ComboBoxCurriculum_Change()
+    ' Deshabilitar elementos del formulario que no son necesario según el curriculum
+    Select Case ComboBoxCurriculum.Value
+        Case "EHS", "FOD", "No Show & Late cancellation", "Espacios confinados", "Formación de Mantas", "Crisis Management", "Safety Culture", "Aviation Safety":
+            CheckBoxSaveToFolder.Enabled = False
+        Case Else:
+            CheckBoxSaveToFolder.Enabled = True
+    End Select
+End Sub
