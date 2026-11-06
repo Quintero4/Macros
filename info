@@ -1,4 +1,5 @@
- Col F [JUAN.M.CAMACHO@AIRBUS.COM] = 1
+  Col F [ALVARO.CALAHORRO@AIRBUS.COM] = 1
+  Col F [JUAN.M.CAMACHO@AIRBUS.COM] = 1
   Col F [JACINTO.CANO@AIRBUS.COM] = 1
   Col F [BORJA.CARRACEDO@AIRBUS.COM] = 1
   Col F [JAVIER.J.CARRASCAL@AIRBUS.COM] = 1
@@ -197,4 +198,3 @@ Reporte SteerCo: filas de datos = 9
   Col F [LUIS.TORRES.GARCIA@AIRBUS.COM] = 1
   Col F [ALBERTO.VIDAL@AIRBUS.COM] = 1
 
-For r = 1 To 2000: If Cells(r, 1).Value <> "" And Cells(r, 2).Value = "" Then Debug.Print r, "[" & Cells(r, 1).Value & "]": Next r
