@@ -1,0 +1,724 @@
+Option Explicit
+
+' Extrae "Mes.Día.Año" del nombre, ignorando sufijo " (n)" y la extensión.
+Private Function GetFechaFromNombre(ByVal s As String) As String
+    Dim re As Object, ms As Object, m As Object
+    Set re = CreateObject("VBScript.RegExp")
+    With re
+        .Pattern = "([A-Za-zÁÉÍÓÚÜÑáéíóúüñ]{3,})\.(\d{1,2})\.(\d{4})(?=\s*(?:\(\d+\))?\s*(?:\.\w+)?$)"
+        .Global = False
+        .IgnoreCase = True
+    End With
+    Set ms = re.Execute(s)
+    If ms.Count > 0 Then
+        Set m = ms(0)
+        GetFechaFromNombre = LCase$(m.SubMatches(0)) & "." & m.SubMatches(1) & "." & m.SubMatches(2)
+    Else
+        GetFechaFromNombre = ""
+    End If
+End Function
+
+Sub MUESTRA_HOJA_PARAMETROS()
+    Dim ws As Worksheet
+    Set ws = ThisWorkbook.Sheets("CONFIGURACION")
+    ws.Visible = xlSheetVisible
+    ws.Activate
+End Sub
+
+Sub RELLENA_TABLAS()
+
+    With Application
+        .ScreenUpdating = False
+        .EnableEvents = False
+        .DisplayAlerts = False
+        .CutCopyMode = False
+        .Calculation = xlCalculationManual
+    End With
+
+    '---------------------------------------------------------------------------------------------'
+    ' Variables
+    '---------------------------------------------------------------------------------------------'
+    Dim Lista_Archivos()
+    Dim Hoja6 As Worksheet
+    Dim Tabla_Rutas
+    Dim wb_Datos As Workbook, ws_Datos As Worksheet
+    Dim Celda_Ref As Range, Celda_Origen As Range, Celda_Destino As Range, Rango_Origen As Range, Rango_Destino As Range, Celda_Total_Mes As Range
+    Dim cabeceraHorizontalHistorialTotalMesesDelAñoRango As Range, Celda_Enlace As Range, Celda_Total As Range
+    Dim curriculum As String, añoControlPanel As String, mesControlPanel As String, Carpeta As String, Archivo As String, Nombre_Hoja As String, rangoTablaDatosOrigen As String
+    Dim i As Long, j As Long, nFil As Long, nCol As Long, Dif_Filas As Long, Dif_Col As Long
+    Dim totalMesOrigen As Double
+    Dim Ok As Boolean
+   
+    Dim rangoDestinoTablaKPI As String
+    Dim rutaAbsolutaInforme As String
+    Dim direccionCeldaTotalMesOrigen As String
+    Dim direccionCeldaCabeceraHorizontalTotalMeses As String
+    Dim celdaMesTotalMeses As Range
+   
+    Dim nombreSinFechaWBOrigenDatos As String
+    Dim nombreArchivo As String
+    Dim fechaToken As String
+    Dim partesFecha() As String
+    Dim textoMesMinusculasNombreArchivo As String
+    Dim numeroMes As Integer
+    Dim añoNombreArchivo As String
+   
+    Dim filaTablaListObject As ListRow
+    Dim referenciaTablaListObject As ListObject
+    ' Variables para seleccionar el informe más reciente
+Dim fechaMasReciente As Date
+Dim fechaCandidata As Date
+Dim mesInforme As Integer
+Dim diaInforme As Integer
+Dim anioInforme As Integer
+Dim mesHistorial As Long
+Dim extensionInforme As String
+
+    '---------------------------------------------------------------------------------------------'
+    ' Obtenemos la fecha seleccionada por el usuario en la hoja MENU
+    '---------------------------------------------------------------------------------------------'
+    añoControlPanel = hControl.Range("AÑO")
+    mesControlPanel = hControl.Range("MES")
+    ' Mes seleccionado para registrar el resultado en el historial
+mesHistorial = CLng(getNumeroMes(LCase$(Trim$(mesControlPanel))))
+
+    '---------------------------------------------------------------------------------------------'
+    ' Obtener datos de la hoja TABLAS
+    '---------------------------------------------------------------------------------------------'
+
+    Set Hoja6 = ThisWorkbook.Sheets("CONFIGURACION")
+    Set referenciaTablaListObject = Hoja6.ListObjects("Tabla_Rutas")
+
+    Tabla_Rutas = referenciaTablaListObject.DataBodyRange.Value
+
+    For i = LBound(Tabla_Rutas) To UBound(Tabla_Rutas)
+
+        curriculum = Tabla_Rutas(i, 1)
+
+        If curriculum = "EHS Manager" Or curriculum = "EHS Senior & Middle Manager" Then
+            curriculum = curriculum
+        End If
+
+        Carpeta = IIf(Right(Tabla_Rutas(i, 2), 1) = "\", Tabla_Rutas(i, 2), Tabla_Rutas(i, 2) & "\")
+        Nombre_Hoja = Tabla_Rutas(i, 4)
+
+        'Obtener listado de archivos de la carpeta del informe actualmente analizandose
+        '-------------------------------------------------------
+        ' BUSCAR EL INFORME MAS RECIENTE DISPONIBLE
+        ' Se utiliza la fecha del nombre del archivo,
+        ' independientemente del mes seleccionado en MENU.
+        '-------------------------------------------------------
+
+
+        Ok = False
+        Archivo = ""
+        rutaAbsolutaInforme = ""
+        fechaMasReciente = 0
+
+
+        ' Obtener los archivos de la carpeta configurada
+        Erase Lista_Archivos
+        Lista_Archivos = DAME_ARCHIVOS_CARPETA(Carpeta)
+
+
+        ' Comprobar que la matriz contiene archivos
+        On Error Resume Next
+        Err.Clear
+        nFil = UBound(Lista_Archivos, 1)
+
+
+        If Err.Number <> 0 Then
+            Err.Clear
+            On Error GoTo 0
+
+
+            MsgBox "No se encontraron archivos en la carpeta:" & _
+                   vbCrLf & Carpeta, vbExclamation
+
+
+            GoTo Siguiente_Informe
+        End If
+
+
+        On Error GoTo 0
+
+
+        Call MUESTRA_HOJA_PARAMETROS
+
+
+        ' Recorrer todos los archivos para encontrar
+        ' el informe con la fecha mas reciente
+        For j = LBound(Lista_Archivos, 1) To _
+                 UBound(Lista_Archivos, 1)
+
+
+            nombreSinFechaWBOrigenDatos = Lista_Archivos(j, 1)
+
+
+            ' Excluir archivos temporales de Excel
+            If Left$(nombreSinFechaWBOrigenDatos, 2) <> "~$" Then
+
+
+                ' Admitir formatos habituales de Excel
+                extensionInforme = LCase$(Mid$( _
+                    nombreSinFechaWBOrigenDatos, _
+                    InStrRev(nombreSinFechaWBOrigenDatos, ".") + 1))
+
+
+                If extensionInforme = "xlsx" Or _
+                   extensionInforme = "xlsm" Or _
+                   extensionInforme = "xlsb" Or _
+                   extensionInforme = "xls" Then
+
+
+                    ' Comprobar que el nombre corresponde al curso
+                    If InStr(1, nombreSinFechaWBOrigenDatos, _
+                             CStr(Tabla_Rutas(i, 3)), _
+                             vbTextCompare) > 0 Then
+
+
+                        ' Extraer fecha del nombre del archivo
+                        fechaToken = GetFechaFromNombre( _
+                                     nombreSinFechaWBOrigenDatos)
+
+
+                        If Len(fechaToken) > 0 Then
+
+
+                            partesFecha = Split(fechaToken, ".")
+
+
+                            textoMesMinusculasNombreArchivo = _
+                                LCase$(partesFecha(0))
+
+
+                            ' Identificar el mes en espanol o ingles
+                            Select Case textoMesMinusculasNombreArchivo
+
+
+                                Case "jan", "ene"
+                                    mesInforme = 1
+
+
+                                Case "feb"
+                                    mesInforme = 2
+
+
+                                Case "mar"
+                                    mesInforme = 3
+
+
+                                Case "apr", "abr"
+                                    mesInforme = 4
+
+
+                                Case "may"
+                                    mesInforme = 5
+
+
+                                Case "jun"
+                                    mesInforme = 6
+
+
+                                Case "jul"
+                                    mesInforme = 7
+
+
+                                Case "aug", "ago"
+                                    mesInforme = 8
+
+
+                                Case "sep", "sept"
+                                    mesInforme = 9
+
+
+                                Case "oct"
+                                    mesInforme = 10
+
+
+                                Case "nov"
+                                    mesInforme = 11
+
+
+                                Case "dec", "dic"
+                                    mesInforme = 12
+
+
+                                Case Else
+                                    mesInforme = 0
+
+
+                            End Select
+
+
+                            If mesInforme > 0 Then
+
+
+                                diaInforme = CInt(partesFecha(1))
+                                anioInforme = CInt(partesFecha(2))
+
+
+                                ' Validar que la fecha sea real
+                                fechaCandidata = DateSerial( _
+                                    anioInforme, mesInforme, diaInforme)
+
+
+                                If Year(fechaCandidata) = anioInforme And _
+                                   Month(fechaCandidata) = mesInforme And _
+                                   Day(fechaCandidata) = diaInforme Then
+
+
+                                    ' Seleccionar la fecha mas reciente
+                                    If Not Ok Or _
+                                       fechaCandidata > fechaMasReciente Then
+
+
+                                        fechaMasReciente = fechaCandidata
+                                        Archivo = nombreSinFechaWBOrigenDatos
+                                        rutaAbsolutaInforme = Carpeta & Archivo
+                                        Ok = True
+
+
+                                    End If
+
+
+                                End If
+
+
+                            End If
+
+
+                        End If
+
+
+                    End If
+
+
+                End If
+
+
+            End If
+
+
+        Next j
+
+
+        ' Si no hay informes validos, omitir este curso
+        If Not Ok Then
+
+
+            MsgBox "No se ha encontrado un informe valido para: " & _
+                   curriculum & vbCrLf & _
+                   "Carpeta: " & Carpeta, vbExclamation
+
+
+            GoTo Siguiente_Informe
+
+
+        End If
+
+
+        ' Actualizar la ruta del informe seleccionado
+        ' en la misma columna que utilizaba la macro original
+        Set filaTablaListObject = referenciaTablaListObject.ListRows(i)
+
+
+        filaTablaListObject.Range(1, 11).Value = _
+            rutaAbsolutaInforme
+
+
+        '-------------------------------------------------------
+        ' FIN DE LA BUSQUEDA DEL INFORME MAS RECIENTE
+        '-------------------------------------------------------
+
+        'Creamos una copia del informe para si tienen que abrir el original que no le salga a nadie un mensaje de que ya está abierto
+        Set wb_Datos = CREAR_COPIA_INFORME(Carpeta, Archivo)
+
+        'Almacenamos la hoja con la tabla KPI en la variable
+        ' Comprobar que existe la hoja esperada
+Dim hojaEncontrada As Boolean
+Dim hojaComprobar As Worksheet
+Dim hojasDisponibles As String
+
+
+hojaEncontrada = False
+hojasDisponibles = ""
+
+
+For Each hojaComprobar In wb_Datos.Worksheets
+
+
+    hojasDisponibles = hojasDisponibles & _
+        vbCrLf & " - " & hojaComprobar.Name
+
+
+    If StrComp(Trim$(hojaComprobar.Name), _
+               Trim$(Nombre_Hoja), vbTextCompare) = 0 Then
+
+
+        Set ws_Datos = hojaComprobar
+        hojaEncontrada = True
+        Exit For
+
+
+    End If
+
+
+Next hojaComprobar
+
+
+If Not hojaEncontrada Then
+
+
+    MsgBox "ERROR: NO SE ENCUENTRA LA HOJA" & vbCrLf & vbCrLf & _
+           "Curso: " & curriculum & vbCrLf & _
+           "Archivo: " & wb_Datos.Name & vbCrLf & _
+           "Hoja esperada: " & Nombre_Hoja & vbCrLf & _
+           "Hojas disponibles:" & hojasDisponibles, _
+           vbExclamation, "Diagnostico de informes"
+
+
+    wb_Datos.Close SaveChanges:=False
+    Set wb_Datos = Nothing
+
+
+    GoTo Siguiente_Informe
+
+
+End If
+
+        'Guardamos la tabla origen usando el rango definido en la hoja CONFIGURACION columna G, la información que haya en ese rango
+        rangoTablaDatosOrigen = Tabla_Rutas(i, 5)
+        Set Rango_Origen = ws_Datos.Range(rangoTablaDatosOrigen)
+
+        'Guardamos el total de la tabla origen con la direccion de celda definida en la hoja CONFIGURACION columna I
+        direccionCeldaTotalMesOrigen = Tabla_Rutas(i, 7)
+        If direccionCeldaTotalMesOrigen <> "" Then
+            totalMesOrigen = ws_Datos.Range(direccionCeldaTotalMesOrigen)
+        Else
+            totalMesOrigen = 0
+        End If
+
+        'Guardamos la celda definida en la hoja CONFIGURACION columna H, donde pegaremos la tabla en la hoja TABLAS
+        rangoDestinoTablaKPI = Tabla_Rutas(i, 6)
+        Set Rango_Destino = ThisWorkbook.Sheets(curriculum).Range(rangoDestinoTablaKPI)
+
+        'Si el rango tiene celdas unidas las descombinamos porque si no no deja pegar luego la tabla
+        If Rango_Destino.MergeCells Then
+            Rango_Destino.UnMerge
+        End If
+        
+        'Desactivar el filtro temporalmente
+        On Error Resume Next
+        ws_Datos.AutoFilterMode = False
+        On Error GoTo 0
+
+        'Con la direccion de celda definida en la hoja CONFIGURACION columna H, pegaremos la tabla en la hoja TABLAS, tras copiar  la tabla
+        On Error Resume Next
+        Rango_Destino.ClearContents
+        Rango_Destino.ClearFormats
+
+        Rango_Origen.Copy
+        Rango_Destino.PasteSpecial xlPasteValues
+        Rango_Destino.PasteSpecial xlPasteFormats
+        On Error GoTo 0
+
+        'Guardamos el rango donde está la cabecera horizontal de la tabla historial del total de los meses del año
+        direccionCeldaCabeceraHorizontalTotalMeses = Tabla_Rutas(i, 8)
+        Set cabeceraHorizontalHistorialTotalMesesDelAñoRango = ThisWorkbook.Sheets(curriculum).Range(direccionCeldaCabeceraHorizontalTotalMeses)
+        Set celdaMesTotalMeses = cabeceraHorizontalHistorialTotalMesesDelAñoRango.Offset(0, mesHistorial)
+
+        'Nos deplazamos a la derecha el número de mes que haya elegido el usuario en control panel y allí colocaremos el valor del mes
+        celdaMesTotalMeses.Value = IIf(totalMesOrigen = 0, "-", totalMesOrigen) 'Si el totalMesOrigen es 0, que en vez de un 0, ponga el caracter "-"
+
+        'Cerramos la copia del informe de la que copiamos la tabla origen
+        wb_Datos.Close (False)
+
+Siguiente_Informe:
+    Next
+
+    CargaForm.Hide
+    CargaForm.mensajeLabel = "Tablas de las hojas de los curriculum de este libro actualizadas, click en la X para salir"
+    CargaForm.Show
+
+    ThisWorkbook.Sheets("MENU").Activate
+
+    With Application
+        .ScreenUpdating = True
+        .EnableEvents = True
+        .DisplayAlerts = True
+        .CutCopyMode = False
+        .Calculation = xlCalculationAutomatic
+    End With
+End Sub
+
+Sub GENERAR_POWERPOINT()
+    With Application
+        .ScreenUpdating = False
+        .EnableEvents = False
+        .DisplayAlerts = False
+        .CutCopyMode = False
+        .Calculation = xlCalculationManual
+    End With
+
+    '---------------------------------------------------------------------------------------------'
+    ' Variables
+    '---------------------------------------------------------------------------------------------'
+    Const conv_pixel As Double = 28.35118152 'Factor de conversión de medidas para el PPT
+
+    Dim Ppt As PowerPoint.Application
+    Dim Presentacion As PowerPoint.Presentation
+    Dim Layout As PowerPoint.CustomLayout
+    Dim Slide_Portada As PowerPoint.Slide, Slide As PowerPoint.Slide
+    Dim Tabla_Ppt As PowerPoint.Shape, Graf_Ppt As PowerPoint.Shape, Icono_Ppt As PowerPoint.Shape
+    Dim Objeto_Excel As Object, Icono_Excel As Shape
+    Dim Fs As Object
+    Dim Tabla_Rutas, Lista_Archivos()
+    Dim Ruta_Template As String, Carpeta As String, Archivo As String
+    Dim Grafico As ChartObject
+    Dim wb_Datos As Workbook, ws_Datos As Worksheet
+    Dim Rango_Tabla As Range, Celda_Enlace As Range
+    Dim Ruta_Excel As String, Txt_Rango As String, mes As String, Año As Integer
+    Dim i As Long, j As Long, numero_Slide As Long, nFil As Long, nCol As Long
+    Dim Ok As Boolean
+
+    Dim hojaCurriculum As Worksheet
+    Dim hoja As Worksheet
+    Dim Hoja6 As Worksheet
+
+    Dim rangoDestinoTablaKPI As String
+    Dim rutaCarpetaInforme As String
+    Dim rutaAbsolutaInforme As String
+    Dim direccionCeldaTotalMesOrigen As String
+    Dim direccionCeldaCabeceraHorizontalTotalMeses As String
+    Dim celdaMesTotalMeses As Range
+    Dim rangoTablaKPIThisWorkbook As String
+    Dim curriculum As String
+    Dim tablaKPI As Range
+    Dim direccionCeldaGrafico As String
+
+    Dim posicionYGrafico As Integer
+    Dim posicionXGrafico As Integer
+
+    Dim posicionXTabla As Integer
+    Dim posicionYTabla As Integer
+
+    Dim posicionXIconoLibroExcel As Integer
+    Dim posicionYIconoLibroExcel As Integer
+
+    Dim existeHojaCurriculum As Boolean
+    
+    Dim FormasPegadas As PowerPoint.ShapeRange
+
+    Set Hoja6 = ThisWorkbook.Sheets("CONFIGURACION")
+
+    CargaForm.mensajeLabel = "Generando Power Point..."
+    CargaForm.Show vbModeless
+
+    '---------------------------------------------------------------------------------------------'
+    ' Inicialización de variables
+    '---------------------------------------------------------------------------------------------'
+
+    Ruta_Template = Hoja6.Range("Ruta_Template_PPT")
+    Set Fs = CreateObject("Scripting.FileSystemObject")
+    Fs.CopyFile Ruta_Template, Ruta_Temp & Nombre_Export_Ppt
+
+    Set Ppt = New PowerPoint.Application
+    Set Presentacion = Ppt.Presentations.Open(Ruta_Temp & Nombre_Export_Ppt)
+
+    Tabla_Rutas = Hoja6.ListObjects("Tabla_Rutas").DataBodyRange.Value
+    Set Icono_Excel = Hoja6.Shapes("Icono_Excel")
+
+    Call ModificarPrimeraDiapositivaConFecha
+
+    '---------------------------------------------------------------------------------------------'
+    ' Rellenar las diapositivas
+    '---------------------------------------------------------------------------------------------'
+    For i = LBound(Tabla_Rutas) To UBound(Tabla_Rutas)
+
+        curriculum = Tabla_Rutas(i, 1)
+
+        'Para depurar el código y encontrar el curriculum deseado
+        If curriculum = "EHS Manager" Then
+            curriculum = curriculum
+        End If
+
+        rangoTablaKPIThisWorkbook = Tabla_Rutas(i, 6)
+        rutaAbsolutaInforme = Tabla_Rutas(i, 11)
+
+        ' Recorre todas las hojas en el libro para ver si existen las hojas con los curriculum
+        For Each hoja In ThisWorkbook.Worksheets
+            If hoja.Name = curriculum Then
+                Set hojaCurriculum = hoja
+                existeHojaCurriculum = True
+                Exit For
+            End If
+            existeHojaCurriculum = False
+        Next hoja
+
+        If Not existeHojaCurriculum Then
+            MsgBox "Comprueba que existe una hoja llamada " & curriculum & " igual que en la tabla de la hoja CONFIGURACION en la columna C"
+        End If
+
+        Set tablaKPI = hojaCurriculum.Range(rangoTablaKPIThisWorkbook)
+
+    '-------------------------------------------------------
+        ' COMPROBAR Y CREAR DIAPOSITIVAS NECESARIAS
+        '-------------------------------------------------------
+
+
+        numero_Slide = CLng(Tabla_Rutas(i, 10))
+
+
+        ' Validar el numero configurado
+        If numero_Slide < 1 Then
+            MsgBox "Numero de diapositiva no valido para: " & _
+                   curriculum, vbExclamation
+            GoTo Siguiente_Slide
+        End If
+
+
+        ' Crear las diapositivas que faltan
+        Do While Presentacion.Slides.Count < numero_Slide
+
+
+            Presentacion.Slides.Add _
+                Presentacion.Slides.Count + 1, ppLayoutBlank
+
+
+        Loop
+
+
+        ' Seleccionar la diapositiva correspondiente
+        Set Slide = Presentacion.Slides(numero_Slide)
+
+
+        ' Para las diapositivas adicionales de EHS,
+        ' anadir un titulo si estan vacias
+        If numero_Slide >= 17 Then
+
+
+            If Slide.Shapes.Count = 0 Then
+
+
+                Dim tituloNuevo As PowerPoint.Shape
+
+
+                Set tituloNuevo = Slide.Shapes.AddTextbox( _
+                    msoTextOrientationHorizontal, _
+                    30, 15, 650, 40)
+
+
+                With tituloNuevo.TextFrame.TextRange
+                    .Text = curriculum
+                    .Font.Size = 22
+                    .Font.Bold = msoTrue
+                    .Font.Name = "Arial"
+                End With
+
+
+            End If
+
+
+        End If
+
+        'Copiar tabla de KPI del informe y pegarla en el numero de slice que se ha definido en la tabla de la hoja CONFIGURACION
+' Copiar tabla KPI como imagen
+tablaKPI.CopyPicture xlScreen, xlPicture
+
+
+' Pegar en la diapositiva
+Set FormasPegadas = Slide.Shapes.Paste
+Set Tabla_Ppt = FormasPegadas(1)
+
+        'Dependiendo del curriculum pondremos la tabla, icono y grafico en una posición u otra
+        Select Case curriculum
+            Case "Espacios confinados"
+                posicionYGrafico = 10 * conv_pixel
+            Case "FOD"
+                posicionYGrafico = 8 * conv_pixel
+            Case "EHS Manager", "EHS Senior & Middle Manager"
+                posicionYIconoLibroExcel = 14 * conv_pixel
+            Case Else
+                'valores por defecto
+        End Select
+
+        posicionYTabla = 3 * conv_pixel
+        posicionYGrafico = IIf(posicionYGrafico = 0, 6 * conv_pixel, posicionYGrafico)
+        posicionXIconoLibroExcel = 20 * conv_pixel
+        posicionYIconoLibroExcel = IIf(posicionYIconoLibroExcel = 0, 10.5 * conv_pixel, posicionYIconoLibroExcel)
+
+        With Tabla_Ppt
+            .LockAspectRatio = msoFalse
+            .Top = posicionYTabla
+        End With
+
+        'Copiar gráfico (exclusiones)
+        direccionCeldaGrafico = Tabla_Rutas(i, 9)
+
+        If curriculum <> "EHS Senior & Middle Manager" And _
+           curriculum <> "EHS Manager" And _
+           curriculum <> "No Show & Late Cancellation" Then
+
+            Set Grafico = hojaCurriculum.ChartObjects(direccionCeldaGrafico)
+' Copiar grafico como imagen
+Grafico.CopyPicture xlScreen, xlPicture
+
+
+' Pegar el grafico en la diapositiva
+Set FormasPegadas = Slide.Shapes.Paste
+Set Graf_Ppt = FormasPegadas(1)
+            With Graf_Ppt
+                .LockAspectRatio = msoFalse
+                .Top = posicionYGrafico
+            End With
+        End If
+
+        ' Insertar el archivo de Excel como un objeto OLE en PowerPoint
+        Set Objeto_Excel = Slide.Shapes.AddOLEObject(Left:=50 * conv_pixel, _
+                                                     Top:=15 * conv_pixel, _
+                                                     Filename:=rutaAbsolutaInforme, _
+                                                     IconLabel:=curriculum, _
+                                                     DisplayAsIcon:=True)
+        With Objeto_Excel
+            .Left = posicionXIconoLibroExcel
+            .Top = posicionYIconoLibroExcel
+        End With
+Siguiente_Slide:
+    Next i
+
+    'Guardar PPT
+
+    Dim rutaPPT As String
+    Dim nombrePPT As String
+    Dim numeroArchivoConMismoNombre As Integer
+    Dim rutaFinalPPT As String
+    Dim extensionPPT As String
+
+    rutaPPT = ThisWorkbook.Path & "\Presentaciones\"
+    nombrePPT = "Mandatory Training status " & Application.WorksheetFunction.Text(Date, "mmm.dd.yyyy")
+    extensionPPT = ".pptx"
+    numeroArchivoConMismoNombre = 0
+    rutaFinalPPT = rutaPPT & nombrePPT & extensionPPT
+
+    Do While Dir(rutaFinalPPT) <> ""
+        numeroArchivoConMismoNombre = numeroArchivoConMismoNombre + 1
+        rutaFinalPPT = rutaPPT & nombrePPT & " (" & numeroArchivoConMismoNombre & ")" & extensionPPT
+    Loop
+
+    Presentacion.SaveAs rutaFinalPPT
+    'Presentacion.Close
+
+    With Application
+        .ScreenUpdating = True
+        .EnableEvents = True
+        .DisplayAlerts = True
+        .CutCopyMode = False
+        .Calculation = xlCalculationAutomatic
+    End With
+
+    CargaForm.Hide
+    CargaForm.mensajeLabel = "Power point guardado en la carpeta de Presentaciones de esta macro. Haz click en la X de la ventana para salir"
+    CargaForm.Show
+
+End Sub
