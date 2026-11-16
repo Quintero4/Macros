@@ -1,0 +1,150 @@
+Option Explicit
+
+Function DAME_ARCHIVOS_CARPETA(Carpeta As String)
+    Dim Lista_Archivos(), Archivo As String
+    Dim i As Long
+    
+    i = 0
+    Archivo = Dir(Carpeta & "*.*")
+    
+    While Archivo <> ""
+        
+        'omitimos el archivo de .onetoc2
+        If InStr(1, Archivo, ".onetoc2", vbTextCompare) = 0 And InStr(1, Archivo, "Details", vbTextCompare) = 0 Then
+            If i = 0 Then
+                ReDim Preserve Lista_Archivos(i, 1 To 2)
+            Else
+                Lista_Archivos = REDIMENSIONAR_MATRIZ(Lista_Archivos, i, 2)
+            End If
+                Lista_Archivos(i, 1) = Archivo
+                Lista_Archivos(i, 2) = FileDateTime(Carpeta & Archivo)
+                i = i + 1
+        End If
+        
+        Archivo = Dir
+        
+    Wend
+    
+    DAME_ARCHIVOS_CARPETA = Lista_Archivos
+    
+End Function
+
+Public Function REDIMENSIONAR_MATRIZ(Matriz(), nFil As Long, nCol As Long)
+    Dim Mat_Aux()
+    Dim nFil_O As Long, nCol_O As Long, Primera_Fil As Long, Primera_Col As Long, Ult_Fil As Long, Ult_Col As Long, i As Long, j As Long
+    
+    REDIMENSIONAR_MATRIZ = False
+    
+    If Not (IsArray(Matriz)) Then Exit Function
+        
+    Primera_Fil = LBound(Matriz, 1)
+    Primera_Col = LBound(Matriz, 2)
+    Ult_Fil = UBound(Matriz, 1)
+    Ult_Col = UBound(Matriz, 2)
+    
+    If nFil < Ult_Fil Then Ult_Fil = nFil ' Por si se quieren recortar filas
+    If nCol < Ult_Col Then Ult_Col = nCol ' Por si se quieren recortar columnas
+    
+    ReDim Mat_Aux(Primera_Fil To nFil, Primera_Col To nCol)
+    
+    For i = Primera_Fil To Ult_Fil
+        For j = Primera_Col To Ult_Col
+            Mat_Aux(i, j) = Matriz(i, j)
+        Next
+    Next
+    
+    REDIMENSIONAR_MATRIZ = Mat_Aux
+End Function
+
+Public Function ORDENA_MATRIZ_DESCENDENTE(Matriz(), Col, Optional Fila_Ini)
+    Dim fila As Long, i As Long, j As Long
+    Dim Aux, Matriz_Aux()
+    
+    Matriz_Aux = Matriz
+    
+    If IsError(Fila_Ini) Then Fila_Ini = LBound(Matriz)
+    
+    For fila = Fila_Ini To UBound(Matriz_Aux)
+        For i = Fila_Ini To UBound(Matriz_Aux) - 1
+            If Matriz_Aux(i + 1, Col) > Matriz_Aux(i, Col) Then
+                For j = LBound(Matriz_Aux, 2) To UBound(Matriz_Aux, 2)
+                    Aux = Matriz_Aux(i, j)
+                    Matriz_Aux(i, j) = Matriz_Aux(i + 1, j)
+                    Matriz_Aux(i + 1, j) = Aux
+                Next
+            End If
+        Next
+    Next
+    ORDENA_MATRIZ_DESCENDENTE = Matriz_Aux
+End Function
+
+Function BUSCAR_DATO_EN_RANGO(Dato As Variant, Rango As Range) As Range
+    Dim Resultado As Range
+    Set Resultado = Rango.Find(What:=Dato, LookIn:=xlValues, LookAt:=xlWhole)
+    
+    Set BUSCAR_DATO_EN_RANGO = Resultado
+End Function
+
+Function CREAR_COPIA_INFORME(Ruta As String, Libro As String) As Workbook
+    Dim Temp As String, ArchivoOrigen As String, ArchivoDestino As String
+    Dim Fs As Object
+    
+    Temp = "C:\Temp\"
+    Set Fs = CreateObject("Scripting.FileSystemObject")
+    ArchivoOrigen = Ruta + Libro
+    ArchivoDestino = Temp + Libro
+    Fs.CopyFile ArchivoOrigen, ArchivoDestino
+
+    Set CREAR_COPIA_INFORME = Workbooks.Open(Temp + Libro, ReadOnly:=True, UpdateLinks:=False)
+End Function
+
+Sub FILTRAR_LIBRO(hoja As Worksheet, Col As Long, Cond As String)
+    Dim nFil As Long, nCol As Long
+    nFil = hoja.Cells(Rows.Count, 1).End(xlUp).Row
+    nCol = hoja.Cells(1, Columns.Count).End(xlToLeft).Column
+    hoja.Range(hoja.Cells(1, 1), hoja.Cells(nFil, nCol)).AutoFilter Field:=Col, Criteria1:=Cond ', Operator:=xlAnd
+End Sub
+
+Sub FILTRAR_LIBRO_AÑO(hoja As Worksheet, Col As Long, Año As Integer)
+    Dim Rango As Range
+    Set Rango = hoja.Cells.CurrentRegion
+    Rango.AutoFilter Field:=Col, Criteria1:=">=" & DateSerial(Año, 1, 1), Operator:=xlAnd, Criteria1:="<=" & DateSerial(Año, 12, 31)
+End Sub
+
+Function getNumeroMes(ByVal nombreMes As String)
+
+    Dim meses As Object
+    ' Crear un diccionario para los meses
+    Set meses = CreateObject("Scripting.Dictionary")
+    
+    'Algunos meses en español e inglés tienen la misma nomenclatura, por eso no hay lo mismo en ambos lados
+    
+    ' Meses en inglés
+    meses.Add "jan", "1"
+    meses.Add "feb", "2"
+    meses.Add "mar", "3"
+    meses.Add "apr", "4"
+    meses.Add "may", "5"
+    meses.Add "jun", "6"
+    meses.Add "jul", "7"
+    meses.Add "aug", "8"
+    meses.Add "sep", "9"
+    meses.Add "oct", "10"
+    meses.Add "nov", "11"
+    meses.Add "dec", "12"
+    
+    ' Meses en español
+    meses.Add "ene", "1"
+    meses.Add "abr", "4"
+    meses.Add "ago", "8"
+    meses.Add "dic", "12"
+    
+    ' Obtener el número del mes del diccionario
+    If meses.Exists(nombreMes) Then
+        getNumeroMes = meses(nombreMes)
+    Else
+        MsgBox "Mes no reconocido: " & nombreMes
+        Exit Function
+    End If
+    
+End Function
