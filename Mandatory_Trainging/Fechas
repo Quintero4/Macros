@@ -1,0 +1,141 @@
+Sub ModificarPrimeraDiapositivaConFecha()
+    Dim pptApp As Object
+    Dim pptPres As Object
+    Dim pptSlide As Object
+    Dim xlApp As Object
+    Dim xlWb As Object
+    Dim controlPanelSheet As Object
+    Dim mes As String
+    Dim anio As String
+    Dim mesCompleto As String
+    Dim hoy As String
+    Dim fechaActual As Date
+    Dim mesActual As String
+    Dim texto As String
+    Dim pptShape As Object
+
+    ' Obtener la aplicación de PowerPoint activa
+    On Error Resume Next
+    Set pptApp = GetObject(, "PowerPoint.Application")
+    On Error GoTo 0
+
+    If pptApp Is Nothing Then
+        MsgBox "No se pudo encontrar una instancia de PowerPoint abierta."
+        Exit Sub
+    End If
+
+    ' Obtener la presentación activa
+    Set pptPres = pptApp.ActivePresentation
+
+    ' Seleccionar la primera diapositiva
+    Set pptSlide = pptPres.Slides(1)
+
+    ' Iniciar Excel y abrir el libro de trabajo
+    On Error Resume Next
+    Set xlApp = GetObject(, "Excel.Application")
+    On Error GoTo 0
+
+    If xlApp Is Nothing Then
+        MsgBox "No se pudo encontrar una instancia de Excel abierta."
+        Exit Sub
+    End If
+
+    Set xlWb = xlApp.ActiveWorkbook
+    Set controlPanelSheet = xlWb.Sheets("MENU")
+
+    ' Obtener el mes y el año de las celdas
+    mes = controlPanelSheet.Range("D4").Value
+    anio = controlPanelSheet.Range("D3").Value
+
+    ' Convertir el mes de tres dígitos a su nombre completo
+    Select Case UCase(mes)
+        Case "JAN": mesCompleto = "January"
+        Case "FEB": mesCompleto = "February"
+        Case "MAR": mesCompleto = "March"
+        Case "APR": mesCompleto = "April"
+        Case "MAY": mesCompleto = "May"
+        Case "JUN": mesCompleto = "June"
+        Case "JUL": mesCompleto = "July"
+        Case "AUG": mesCompleto = "August"
+        Case "SEP": mesCompleto = "September"
+        Case "OCT": mesCompleto = "October"
+        Case "NOV": mesCompleto = "November"
+        Case "DEC": mesCompleto = "December"
+        Case Else: mesCompleto = "Invalid Month"
+    End Select
+
+    ' Obtener la fecha de hoy
+    hoy = Format(Date, "DD/MM/YYYY")
+
+    ' Escribir el texto en la forma renombrada "mesaño" en la primera diapositiva
+    pptSlide.Shapes("mesaño").TextFrame.TextRange.Text = mesCompleto & " - " & anio
+
+    ' Escribir el texto "TAOAP" y la fecha de hoy en la forma renombrada "fecha"
+    pptSlide.Shapes("fecha").TextFrame.TextRange.Text = "TAOAP" & vbCrLf & hoy
+
+    ' Obtener la fecha actual
+    fechaActual = Date
+
+    ' Formatear el mes actual en inglés completo
+    mesActual = GetMonthName(Month(fechaActual))
+
+    ' Crear el texto a insertar
+    texto = "To be finished at end of " & mesActual & " " & Format(fechaActual, "yyyy")
+
+    ' Obtener la diapositiva 3
+    Set pptSlide = pptPres.Slides(3)
+
+    ' Obtener la forma con el nombre "TCOfecha"
+    On Error Resume Next
+    Set pptShape = pptSlide.Shapes("TCOfecha")
+    On Error GoTo 0
+
+    ' Verificar si la forma existe
+    If Not pptShape Is Nothing Then
+        ' Insertar el texto en la forma
+        pptShape.TextFrame.TextRange.Text = "For WC" & vbCrLf & texto
+
+        ' Formatear el texto
+        With pptShape.TextFrame.TextRange
+            .Font.Size = 16 ' Ajustar el tamaño de la fuente a 16
+        End With
+
+        ' Formatear la primera línea sin negrita
+        With pptShape.TextFrame.TextRange.Characters(Start:=1, Length:=Len("For WC"))
+            .Font.Bold = msoFalse
+        End With
+
+        ' Formatear la segunda línea en negrita
+        With pptShape.TextFrame.TextRange.Characters(Start:=Len("For WC") + 2, Length:=Len(texto))
+            .Font.Bold = msoTrue
+        End With
+    Else
+        MsgBox "La forma 'TCOfecha' no se encontró en la diapositiva 3."
+    End If
+
+    ' Limpiar objetos
+    Set pptSlide = Nothing
+    Set pptPres = Nothing
+    Set pptApp = Nothing
+    Set controlPanelSheet = Nothing
+    Set xlWb = Nothing
+    Set xlApp = Nothing
+End Sub
+
+Function GetMonthName(monthNumber As Integer) As String
+    Select Case monthNumber
+        Case 1: GetMonthName = "January"
+        Case 2: GetMonthName = "February"
+        Case 3: GetMonthName = "March"
+        Case 4: GetMonthName = "April"
+        Case 5: GetMonthName = "May"
+        Case 6: GetMonthName = "June"
+        Case 7: GetMonthName = "July"
+        Case 8: GetMonthName = "August"
+        Case 9: GetMonthName = "September"
+        Case 10: GetMonthName = "October"
+        Case 11: GetMonthName = "November"
+        Case 12: GetMonthName = "December"
+        Case Else: GetMonthName = "Invalid Month"
+    End Select
+End Function
