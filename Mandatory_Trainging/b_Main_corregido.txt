@@ -1,4 +1,91 @@
-﻿Option Explicit
+Archivo adjunto del usuarioArchivo adjunto del usuario
+
+Mandatory Training status nov.16.2026 (1).pptx
+Presentación
+Fatal! Las diapositivas no están centradas, en todas las diapositivas los modulos de excel que enlazan con los archivos superpuestos encima de las tablas, a partir de la 14 todo superpuesto uno encima de otro... fatal -.
+
+Te paso como ha salido el ppt para que lo veas. Estoy hay que arreglarlo. 
+Te paso el error que me ha salido tambien  y te vuelvo a pasar esto por si está el arror tambien aqui en la imagen 2
+
+Ha pensado durante 6m 44s
+Tienes razón. He revisado el PowerPoint que has adjuntado y el resultado no es aceptable: las tablas, los gráficos y los iconos de Excel se pisan, y los cursos nuevos están mezclados con contenido antiguo.
+
+Además, he encontrado algo que no habíamos resuelto en las correcciones anteriores: la plantilla de PowerPoint conserva diapositivas antiguas de EHS en las posiciones 14, 15 y 16, pero la nueva configuración utiliza esas posiciones para OnBoarding y Quality Essentials.
+
+Por eso no basta con corregir los nombres de los gráficos. Hay que corregir también cómo se preparan y distribuyen las diapositivas.
+
+Qué he confirmado en el PowerPoint
+Diapositiva
+
+Problema encontrado
+
+3–13
+
+Los iconos de Excel se superponen a los gráficos; algunas tablas y gráficos quedan demasiado juntos.
+
+14
+
+Conserva el título antiguo de EHS Managers, en lugar de OnBoarding.
+
+15
+
+Mezcla EHS Senior & Middle Managers con la tabla y el gráfico de Quality Essentials Team Leaders.
+
+16
+
+Mezcla la ilustración antigua de EHS con la tabla de Quality Essentials SteerCo.
+
+17–18
+
+Contienen datos de EHS, pero las tablas y los gráficos están superpuestos y no respetan la composición corporativa de las anteriores.
+
+También he comprobado que el aviso de generación señala una pestaña de OnBoarding inexistente en el Excel principal y dos gráficos Quality Essentials cuyo nombre real no coincide con la configuración.
+
+Voy a mantener intacta la actualización de tablas y centrar la corrección en la preparación y maquetación del PowerPoint.
+
+He preparado una versión nueva del módulo b_Main
+b_Main_reparado_diseno.txt
+
+Código VBA completo para sustituir el módulo actual
+
+ Descargar módulo corregido
+
+He conservado sin cambios el código de actualización de tablas de la versión anterior. Solo he sustituido el generador del PowerPoint y añadido funciones auxiliares de maquetación.
+
+Cambios incluidos
+Diapositivas 3–13: eliminar las imágenes antiguas de tablas y gráficos antes de volver a insertarlas; conservar la cabecera corporativa.
+
+Diapositivas 14–16: retirar los contenidos antiguos de EHS, actualizar sus títulos e insertar los cursos nuevos.
+
+Diapositivas 17–18: utilizar el encabezado corporativo de la plantilla para los dos cursos EHS.
+
+Posicionamiento: ajustar automáticamente los tamaños y separar tablas, gráficos e iconos de Excel.
+
+Quality Essentials: buscar también los gráficos por su título cuando el nombre del objeto sea incorrecto.
+
+OnBoarding: si sigue faltando su pestaña en el Excel principal, intentar obtener la tabla KPI directamente de su informe de origen, en modo de solo lectura.
+
+Esto último es una solución alternativa para recuperar la tabla, pero no reconstruye su gráfico histórico. Para eso sigue siendo necesaria una pestaña de OnBoarding con sus datos y gráfico correspondientes.
+
+Cómo instalarlo
+Haz una copia de seguridad de tu .xlsm.
+
+Abre Alt + F11 y entra en b_Main.
+
+Sustituye todo su contenido por el archivo descargado.
+
+Selecciona Depurar → Compilar VBAProject.
+
+Guarda y ejecuta GENERAR POWERPOINT.
+
+He podido comprobar la estructura del PowerPoint que adjuntaste y preparar el código sobre esa base. No he podido ejecutarlo en tu Excel con acceso a las carpetas de red, así que esta versión todavía necesita una prueba real y no te voy a garantizar que todas las diapositivas queden perfectas sin verla.
+
+Mi prioridad ahora es que recuperes las 18 diapositivas con una distribución coherente y sin las superposiciones anteriores. Si aparece alguna incidencia, la corregiremos sobre este módulo unificado, sin volver a tocar la actualización de tablas.
+
+
+b_Main_reparado_diseno.txt
+Documento
+Option Explicit
 
 ' Extrae "Mes.Día.Año" del nombre, ignorando sufijo " (n)" y la extensión.
 Private Function GetFechaFromNombre(ByVal s As String) As String
@@ -452,252 +539,344 @@ Siguiente_Informe:
     End With
 End Sub
 
+' ================================================================
+' GENERACION POWERPOINT - VERSION CON CONTROL DE DISEÑO
+' NO CAMBIA LA MACRO RELLENA_TABLAS NI LOS DEMAS PROCEDIMIENTOS.
+' ================================================================
+Private Sub MT_BorrarContenidoAnterior(ByVal s As PowerPoint.Slide, ByVal limpiarNotas As Boolean)
+    Dim k As Long
+    Dim sh As PowerPoint.Shape
+    For k = s.Shapes.Count To 1 Step -1
+        Set sh = s.Shapes(k)
+        ' Conservar exclusivamente las marcas de cabecera y el logo.
+        ' Borrar imagenes/objetos insertados en la zona de contenido.
+        If sh.Top > 74 Then
+            If sh.Type = msoPicture Or sh.Type = msoLinkedPicture _
+               Or sh.Type = msoEmbeddedOLEObject Or sh.Type = msoLinkedOLEObject _
+               Or sh.Type = msoChart Then
+                sh.Delete
+            ElseIf limpiarNotas Then
+                ' En 14-18 se retiran tambien notas y textos anteriores.
+                If sh.HasTextFrame Then
+                    If sh.TextFrame.HasText Then sh.Delete
+                End If
+            End If
+        End If
+    Next k
+End Sub
+
+Private Sub MT_PonerTitulo(ByVal s As PowerPoint.Slide, ByVal titulo As String, _
+                          ByVal anchoSlide As Single)
+    Dim sh As PowerPoint.Shape, objetivo As PowerPoint.Shape
+    For Each sh In s.Shapes
+        If sh.HasTextFrame Then
+            If sh.Left < 75 And sh.Top >= 30 And sh.Top < 78 And sh.Width > anchoSlide * 0.65 Then
+                Set objetivo = sh
+                Exit For
+            End If
+        End If
+    Next sh
+    If objetivo Is Nothing Then
+        Set objetivo = s.Shapes.AddTextbox(msoTextOrientationHorizontal, 36, 44, anchoSlide - 72, 35)
+    End If
+    With objetivo
+        .Left = 36
+        .Top = 44
+        .Width = anchoSlide - 72
+        .Height = 32
+        .TextFrame.TextRange.Text = titulo
+        .TextFrame.TextRange.Font.Size = 20
+        .TextFrame.TextRange.Font.Bold = msoTrue
+        .TextFrame.TextRange.Font.Name = "Arial"
+        .TextFrame.TextRange.Font.Color.RGB = RGB(20, 45, 85)
+    End With
+End Sub
+
+Private Sub MT_Encajar(ByVal sh As PowerPoint.Shape, ByVal maxAncho As Single, _
+                      ByVal maxAlto As Single)
+    sh.LockAspectRatio = msoTrue
+    If sh.Width > maxAncho Then sh.Width = maxAncho
+    If sh.Height > maxAlto Then sh.Height = maxAlto
+End Sub
+
 Sub GENERAR_POWERPOINT()
-    ' Genera PPT sin alterar RELLENA_TABLAS ni sus rutas seleccionadas.
-    Const CM_A_PUNTOS As Double = 28.35118152
+    Const INCH As Single = 72
+    Dim appPPT As PowerPoint.Application, ppt As PowerPoint.Presentation
+    Dim sl As PowerPoint.Slide, duplicadas As PowerPoint.SlideRange
+    Dim conf As Worksheet, ws As Worksheet, wsOrigen As Worksheet
+    Dim libroOrigen As Workbook
+    Dim filas As Variant, curso As String, rangoKPI As String, rangoOrigen As String
+    Dim nombreHoja As String, nombreGrafico As String, ruta As String, rutaPlantilla As String
+    Dim t As PowerPoint.Shape, g As PowerPoint.Shape, icono As PowerPoint.Shape
+    Dim pegadas As PowerPoint.ShapeRange
+    Dim co As ChartObject, coElegido As ChartObject
+    Dim n As Long, i As Long, intento As Long, cuenta As Long
+    Dim W As Single, H As Single, areaTop As Single, areaBottom As Single
+    Dim anchoMax As Single, altoTabla As Single, altoGrafico As Single, disponible As Single
+    Dim xIcono As Single, yIcono As Single, pieGrafico As Single
+    Dim aviso As String, detalle As String, archivoSalida As String, carpetaSalida As String
+    Dim baseNombre As String, paso As String
+    Dim valErr As Long, txtErr As String
+    Dim screenAnterior As Boolean, eventosAnterior As Boolean
+    Dim alertasAnteriores As Boolean, calculoAnterior As XlCalculation
+    Dim plantillaPrevia As String
+    Dim esNuevo As Boolean, esEHS As Boolean
 
-    Dim pptApp As PowerPoint.Application
-    Dim presentacion As PowerPoint.Presentation
-    Dim diapositiva As PowerPoint.Slide
-    Dim tablaPPT As PowerPoint.Shape
-    Dim graficoPPT As PowerPoint.Shape
-    Dim objetoExcel As PowerPoint.Shape
-    Dim formasPegadas As PowerPoint.ShapeRange
-    Dim tituloNuevo As PowerPoint.Shape
-
-    Dim configuracion As Worksheet
-    Dim hojaCurso As Worksheet
-    Dim filaDatos As Variant
-    Dim rutaPlantilla As String, rutaInforme As String
-    Dim rutaSalida As String, carpetaSalida As String
-    Dim baseArchivo As String
-    Dim curso As String, rangoTabla As String, nombreGrafico As String
-    Dim grafico As ChartObject, graficoEncontrado As ChartObject
-    Dim listaGraficos As String, incidencias As String
-    Dim numeroSlide As Long, i As Long, contador As Long
-    Dim posicionGrafico As Double, posicionIcono As Double
-    Dim anchoDisponible As Double
-    Dim falloPaso As String
-    Dim numError As Long, descripcionError As String
-    Dim previoScreen As Boolean, previoEvents As Boolean
-    Dim previoAlerts As Boolean, previoCalculo As XlCalculation
-
-    ' Guardar las preferencias anteriores de Excel para restaurarlas.
-    previoScreen = Application.ScreenUpdating
-    previoEvents = Application.EnableEvents
-    previoAlerts = Application.DisplayAlerts
-    previoCalculo = Application.Calculation
-
+    screenAnterior = Application.ScreenUpdating
+    eventosAnterior = Application.EnableEvents
+    alertasAnteriores = Application.DisplayAlerts
+    calculoAnterior = Application.Calculation
     On Error GoTo ErrorGeneral
     Application.ScreenUpdating = False
     Application.EnableEvents = False
     Application.DisplayAlerts = False
     Application.Calculation = xlCalculationManual
 
-    Set configuracion = ThisWorkbook.Worksheets("CONFIGURACION")
-    filaDatos = configuracion.ListObjects("Tabla_Rutas").DataBodyRange.Value
-    rutaPlantilla = CStr(configuracion.Range("Ruta_Template_PPT").Value)
-
-    If Len(Dir(rutaPlantilla)) = 0 Then
-        Err.Raise vbObjectError + 100, , "No se encuentra la plantilla PPT: " & rutaPlantilla
-    End If
+    Set conf = ThisWorkbook.Worksheets("CONFIGURACION")
+    filas = conf.ListObjects("Tabla_Rutas").DataBodyRange.Value
+    rutaPlantilla = CStr(conf.Range("Ruta_Template_PPT").Value)
+    paso = "Acceder a plantilla"
+    If Len(Dir(rutaPlantilla)) = 0 Then Err.Raise vbObjectError + 801, , "Plantilla no encontrada: " & rutaPlantilla
     If Len(Dir(Ruta_Temp, vbDirectory)) = 0 Then MkDir Ruta_Temp
-    FileCopy rutaPlantilla, Ruta_Temp & Nombre_Export_Ppt
+    plantillaPrevia = Ruta_Temp & Nombre_Export_Ppt
+    If Len(Dir(plantillaPrevia)) > 0 Then Kill plantillaPrevia
+    FileCopy rutaPlantilla, plantillaPrevia
+    Set appPPT = New PowerPoint.Application
+    appPPT.Visible = msoTrue
+    Set ppt = appPPT.Presentations.Open(plantillaPrevia)
+    W = ppt.PageSetup.SlideWidth
+    H = ppt.PageSetup.SlideHeight
 
-    Set pptApp = New PowerPoint.Application
-    pptApp.Visible = msoTrue
-    Set presentacion = pptApp.Presentations.Open(Ruta_Temp & Nombre_Export_Ppt)
-
-    ' Conservar la macro de portada existente.
+    paso = "Actualizar portada"
     Call ModificarPrimeraDiapositivaConFecha
 
-    For i = LBound(filaDatos, 1) To UBound(filaDatos, 1)
-        falloPaso = "Lectura de configuracion"
-        curso = Trim$(CStr(filaDatos(i, 1)))
-        If Len(curso) = 0 Then GoTo SiguienteCurso
-
-        rangoTabla = Trim$(CStr(filaDatos(i, 6)))
-        rutaInforme = Trim$(CStr(filaDatos(i, 11)))
-        nombreGrafico = Trim$(CStr(filaDatos(i, 9)))
-        numeroSlide = CLng(Val(CStr(filaDatos(i, 10))))
-
-        ' Nunca reutilizar una hoja o grafico del curso anterior.
-        Set hojaCurso = Nothing
-        Set graficoEncontrado = Nothing
-        Set graficoPPT = Nothing
-        Set tablaPPT = Nothing
-        Set objetoExcel = Nothing
-
-        If numeroSlide < 1 Then
-            incidencias = incidencias & vbCrLf & curso & ": numero de diapositiva invalido."
-            GoTo SiguienteCurso
-        End If
-        On Error Resume Next
-        Set hojaCurso = ThisWorkbook.Worksheets(curso)
-        On Error GoTo ErrorGeneral
-        If hojaCurso Is Nothing Then
-            incidencias = incidencias & vbCrLf & curso & ": no existe su pestana en este Excel."
-            GoTo SiguienteCurso
-        End If
-        If Len(rangoTabla) = 0 Then
-            incidencias = incidencias & vbCrLf & curso & ": falta el rango destino en CONFIGURACION."
-            GoTo SiguienteCurso
-        End If
-
-        ' La plantilla antigua tiene 16 slides: generar 17 y 18 si hace falta.
-        Do While presentacion.Slides.Count < numeroSlide
-            presentacion.Slides.Add presentacion.Slides.Count + 1, ppLayoutBlank
+    ' IMPORTANTE: la plantilla original tiene 16 diapositivas.
+    ' Las 14-16 eran antiguos contenidos EHS, ahora se destinan a los nuevos cursos.
+    ' Duplicamos la 14 original (cabecera y logotipo) para disponer de 17 y 18.
+    paso = "Completar plantilla a 18 slides"
+    If ppt.Slides.Count >= 14 Then
+        Do While ppt.Slides.Count < 18
+            Set duplicadas = ppt.Slides(14).Duplicate
+            duplicadas(1).MoveTo ppt.Slides.Count
         Loop
-        Set diapositiva = presentacion.Slides(numeroSlide)
+    Else
+        Do While ppt.Slides.Count < 18
+            ppt.Slides.Add ppt.Slides.Count + 1, ppLayoutBlank
+        Loop
+    End If
 
-        ' Titular solamente las nuevas slides en blanco.
-        If numeroSlide >= 17 And diapositiva.Shapes.Count = 0 Then
-            Set tituloNuevo = diapositiva.Shapes.AddTextbox( _
-                msoTextOrientationHorizontal, 32, 20, _
-                presentacion.PageSetup.SlideWidth - 64, 35)
-            With tituloNuevo.TextFrame.TextRange
-                .Text = curso
-                .Font.Name = "Arial"
-                .Font.Size = 22
-                .Font.Bold = msoTrue
-            End With
+    ' Borrar SOLO el contenido de cuerpo anterior, no el estilo corporativo.
+    ' En las 14-18 se eliminan tambien notas obsoletas de EHS.
+    For n = 3 To ppt.Slides.Count
+        MT_BorrarContenidoAnterior ppt.Slides(n), (n >= 14)
+    Next n
+
+    For i = LBound(filas, 1) To UBound(filas, 1)
+        paso = "Leer configuracion"
+        curso = Trim$(CStr(filas(i, 1)))
+        If Len(curso) = 0 Then GoTo SiguienteCurso
+        rangoKPI = Trim$(CStr(filas(i, 6)))
+        rangoOrigen = Trim$(CStr(filas(i, 5)))
+        nombreHoja = Trim$(CStr(filas(i, 4)))
+        nombreGrafico = Trim$(CStr(filas(i, 9)))
+        ruta = Trim$(CStr(filas(i, 11)))
+        n = CLng(Val(CStr(filas(i, 10))))
+        If n < 3 Or n > ppt.Slides.Count Then
+            aviso = aviso & vbCrLf & curso & ": numero de slide no valido (" & n & ")."
+            GoTo SiguienteCurso
+        End If
+        Set sl = ppt.Slides(n)
+        esNuevo = n >= 14
+        esEHS = (curso = "EHS Manager" Or curso = "EHS Senior & Middle Manager")
+        If esNuevo Then MT_PonerTitulo sl, curso, W
+
+        Set ws = Nothing: Set wsOrigen = Nothing: Set libroOrigen = Nothing
+        Set coElegido = Nothing: Set t = Nothing: Set g = Nothing: Set icono = Nothing
+        On Error Resume Next
+        Set ws = ThisWorkbook.Worksheets(curso)
+        On Error GoTo ErrorGeneral
+
+        ' Si la hoja principal de OnBoarding no existe, tomar solo el KPI
+        ' directamente del ultimo informe. No altera la actualizacion de tablas.
+        If ws Is Nothing And Len(ruta) > 0 And Len(nombreHoja) > 0 Then
+            If Len(Dir(ruta)) > 0 Then
+                paso = "Abrir KPI alternativo de " & curso
+                On Error Resume Next
+                Set libroOrigen = Workbooks.Open(ruta, ReadOnly:=True, UpdateLinks:=False)
+                If Not libroOrigen Is Nothing Then Set wsOrigen = libroOrigen.Worksheets(nombreHoja)
+                On Error GoTo ErrorGeneral
+            End If
         End If
 
-        ' Copiar KPI desde la hoja YA ACTUALIZADA del propio Excel.
-        falloPaso = "Copiar y pegar tabla KPI"
+        If ws Is Nothing And wsOrigen Is Nothing Then
+            aviso = aviso & vbCrLf & curso & ": falta pestana en libro principal y no se pudo usar la hoja del informe."
+            GoTo CerrarOrigen
+        End If
+
+        paso = "Pegar tabla: " & curso
         On Error Resume Next
         Err.Clear
-        hojaCurso.Range(rangoTabla).CopyPicture xlScreen, xlPicture
-        If Err.Number = 0 Then Set formasPegadas = diapositiva.Shapes.Paste
-        If Err.Number = 0 Then Set tablaPPT = formasPegadas(1)
-        numError = Err.Number
-        descripcionError = Err.Description
+        If Not ws Is Nothing Then
+            ws.Activate
+            ws.Range(rangoKPI).CopyPicture Appearance:=xlScreen, Format:=xlPicture
+        Else
+            wsOrigen.Activate
+            wsOrigen.Range(rangoOrigen).CopyPicture Appearance:=xlScreen, Format:=xlPicture
+            aviso = aviso & vbCrLf & curso & ": KPI cargado desde informe origen; sin historial local."
+        End If
+        If Err.Number = 0 Then Set pegadas = sl.Shapes.Paste
+        If Err.Number = 0 Then Set t = pegadas(1)
+        valErr = Err.Number: txtErr = Err.Description
         On Error GoTo ErrorGeneral
-        If numError <> 0 Or tablaPPT Is Nothing Then
-            incidencias = incidencias & vbCrLf & curso & ": fallo al pegar tabla - " & descripcionError
-            GoTo SiguienteCurso
-        End If
-        With tablaPPT
-            .LockAspectRatio = msoTrue
-            .Top = 3 * CM_A_PUNTOS
-            .Left = 1.2 * CM_A_PUNTOS
-            anchoDisponible = presentacion.PageSetup.SlideWidth - (2.4 * CM_A_PUNTOS)
-            If .Width > anchoDisponible Then .Width = anchoDisponible
-        End With
-
-        ' Cada curso parte con sus propias posiciones.
-        posicionGrafico = 6 * CM_A_PUNTOS
-        If curso = "FOD" Then posicionGrafico = 8 * CM_A_PUNTOS
-        If curso = "Espacios confinados" Then posicionGrafico = 10 * CM_A_PUNTOS
-        posicionIcono = 10.5 * CM_A_PUNTOS
-        If curso = "EHS Manager" Or curso = "EHS Senior & Middle Manager" Then
-            posicionIcono = 14 * CM_A_PUNTOS
+        If valErr <> 0 Or t Is Nothing Then
+            aviso = aviso & vbCrLf & curso & ": tabla no pegada: " & txtErr
+            GoTo CerrarOrigen
         End If
 
-        ' Buscar por NOMBRE REAL; si no existe, no interrumpir el PPT.
-        ' Los EHS originales no requerian grafico: solo copiar si existe.
-        listaGraficos = ""
-        If Len(nombreGrafico) > 0 Then
-            For Each grafico In hojaCurso.ChartObjects
-                listaGraficos = listaGraficos & " [" & grafico.Name & "]"
-                If StrComp(Trim$(grafico.Name), nombreGrafico, vbTextCompare) = 0 Then
-                    Set graficoEncontrado = grafico
+        ' Distribucion dinamica: encabezado hasta 1.05", contenido hasta 6.75".
+        ' Las EHS contienen tablas mas altas, por ello se ajustan por separado.
+        areaTop = 1.17 * INCH
+        areaBottom = H - 0.65 * INCH
+        anchoMax = W - 1.0 * INCH
+        If esEHS Then
+            altoTabla = 3.1 * INCH
+        Else
+            altoTabla = 1.72 * INCH
+        End If
+        MT_Encajar t, anchoMax, altoTabla
+        t.Left = (W - t.Width) / 2
+        t.Top = areaTop
+
+        ' Buscar grafico por nombre. En Quality Essentials, aceptar un grafico
+        ' con titulo Quality Essentials aunque tenga nombre antiguo de Aviation.
+        detalle = ""
+        If Not ws Is Nothing Then
+            For Each co In ws.ChartObjects
+                detalle = detalle & " [" & co.Name & "]"
+                If StrComp(Trim$(co.Name), nombreGrafico, vbTextCompare) = 0 Then
+                    Set coElegido = co
                     Exit For
                 End If
-            Next grafico
+            Next co
+            If coElegido Is Nothing And InStr(1, curso, "Quality Essentials", vbTextCompare) > 0 Then
+                For Each co In ws.ChartObjects
+                    On Error Resume Next
+                    If co.Chart.HasTitle Then
+                        If InStr(1, co.Chart.ChartTitle.Text, "Quality Essentials", vbTextCompare) > 0 Then
+                            Set coElegido = co
+                        End If
+                    End If
+                    On Error GoTo ErrorGeneral
+                    If Not coElegido Is Nothing Then Exit For
+                Next co
+            End If
         End If
 
-        If Not graficoEncontrado Is Nothing Then
-            falloPaso = "Copiar y pegar grafico"
+        If Not coElegido Is Nothing Then
+            paso = "Pegar grafico: " & curso
             On Error Resume Next
             Err.Clear
-            graficoEncontrado.CopyPicture xlScreen, xlPicture
-            If Err.Number = 0 Then Set formasPegadas = diapositiva.Shapes.Paste
-            If Err.Number = 0 Then Set graficoPPT = formasPegadas(1)
-            numError = Err.Number
-            descripcionError = Err.Description
+            ws.Activate
+            coElegido.CopyPicture Appearance:=xlScreen, Format:=xlPicture
+            If Err.Number = 0 Then Set pegadas = sl.Shapes.Paste
+            If Err.Number = 0 Then Set g = pegadas(1)
+            valErr = Err.Number: txtErr = Err.Description
             On Error GoTo ErrorGeneral
-            If numError = 0 And Not graficoPPT Is Nothing Then
-                With graficoPPT
-                    .LockAspectRatio = msoTrue
-                    .Top = posicionGrafico
-                    .Left = 1.2 * CM_A_PUNTOS
-                    If .Width > anchoDisponible Then .Width = anchoDisponible
-                End With
+            If valErr <> 0 Or g Is Nothing Then
+                aviso = aviso & vbCrLf & curso & ": error al pegar grafico: " & txtErr
             Else
-                incidencias = incidencias & vbCrLf & curso & ": no se pudo pegar su grafico - " & descripcionError
+                disponible = areaBottom - (t.Top + t.Height) - 0.22 * INCH
+                If disponible > 0.5 * INCH Then
+                    MT_Encajar g, W - 2 * INCH, disponible
+                    g.Top = t.Top + t.Height + 0.22 * INCH
+                    g.Left = (W - g.Width) / 2
+                    ' Dejar espacio a la derecha para acceso al informe.
+                    If g.Left + g.Width > W - 1.3 * INCH Then
+                        g.Width = W - 2.6 * INCH
+                        g.Left = 0.55 * INCH
+                    End If
+                Else
+                    g.Delete
+                    Set g = Nothing
+                    aviso = aviso & vbCrLf & curso & ": grafico sin espacio suficiente."
+                End If
             End If
-        ElseIf Len(nombreGrafico) > 0 Then
-            incidencias = incidencias & vbCrLf & curso & ": grafico '" & nombreGrafico & _
-                "' no encontrado en su pestana. Disponibles:" & IIf(Len(listaGraficos) = 0, " ninguno", listaGraficos)
+        ElseIf Len(nombreGrafico) > 0 And Not esEHS Then
+            aviso = aviso & vbCrLf & curso & ": grafico " & nombreGrafico & " no disponible. Graficos:" & detalle
         End If
 
-        ' Insertar el acceso al informe solamente cuando la ruta existe.
-        If Len(rutaInforme) > 0 Then
-            If Len(Dir(rutaInforme)) > 0 Then
-                falloPaso = "Insertar acceso OLE"
+        ' El OLE queda ARRIBA a la derecha de la zona inferior: no sobre el grafico.
+        ' PowerPoint suele ignorar las coordenadas iniciales de AddOLEObject:
+        ' es imprescindible reposicionarlo DESPUES de crearlo.
+        If Len(ruta) > 0 Then
+            If Len(Dir(ruta)) > 0 Then
+                paso = "Insertar icono: " & curso
                 On Error Resume Next
                 Err.Clear
-                Set objetoExcel = diapositiva.Shapes.AddOLEObject( _
-                    Left:=20 * CM_A_PUNTOS, Top:=posicionIcono, _
-                    Filename:=rutaInforme, IconLabel:=curso, DisplayAsIcon:=msoTrue)
-                numError = Err.Number
-                descripcionError = Err.Description
+                Set icono = sl.Shapes.AddOLEObject( _
+                    Left:=W - 1.1 * INCH, Top:=H - 1.55 * INCH, _
+                    Width:=0.56 * INCH, Height:=0.56 * INCH, _
+                    Filename:=ruta, DisplayAsIcon:=msoTrue, IconLabel:=curso)
+                valErr = Err.Number: txtErr = Err.Description
                 On Error GoTo ErrorGeneral
-                If numError <> 0 Then
-                    incidencias = incidencias & vbCrLf & curso & ": no se pudo insertar el icono Excel - " & descripcionError
+                If valErr = 0 And Not icono Is Nothing Then
+                    With icono
+                        .LockAspectRatio = msoFalse
+                        .Width = 0.56 * INCH
+                        .Height = 0.56 * INCH
+                        .Left = W - 1.12 * INCH
+                        .Top = H - 1.63 * INCH
+                    End With
+                Else
+                    aviso = aviso & vbCrLf & curso & ": icono no insertado: " & txtErr
                 End If
             Else
-                incidencias = incidencias & vbCrLf & curso & ": ruta del informe no accesible: " & rutaInforme
+                aviso = aviso & vbCrLf & curso & ": ruta del archivo no accesible para OLE."
             End If
-        Else
-            incidencias = incidencias & vbCrLf & curso & ": ruta de informe vacia en CONFIGURACION."
         End If
+CerrarOrigen:
+        If Not libroOrigen Is Nothing Then libroOrigen.Close SaveChanges:=False
+        Set libroOrigen = Nothing
 SiguienteCurso:
     Next i
 
-    ' Guardar incluso si faltan graficos, informando de las incidencias.
+    paso = "Guardar presentacion"
     carpetaSalida = ThisWorkbook.Path & "\Presentaciones\"
     If Len(Dir(carpetaSalida, vbDirectory)) = 0 Then MkDir carpetaSalida
-    baseArchivo = "Mandatory Training status " & Format(Date, "mmm.dd.yyyy")
-    rutaSalida = carpetaSalida & baseArchivo & ".pptx"
-    contador = 0
-    Do While Len(Dir(rutaSalida)) > 0
-        contador = contador + 1
-        rutaSalida = carpetaSalida & baseArchivo & " (" & contador & ").pptx"
+    baseNombre = "Mandatory Training status " & Format(Date, "mmm.dd.yyyy")
+    archivoSalida = carpetaSalida & baseNombre & ".pptx"
+    cuenta = 0
+    Do While Len(Dir(archivoSalida)) > 0
+        cuenta = cuenta + 1
+        archivoSalida = carpetaSalida & baseNombre & " (" & cuenta & ").pptx"
     Loop
-    presentacion.SaveAs rutaSalida
-
+    ppt.SaveAs archivoSalida
     Application.CutCopyMode = False
-    Application.ScreenUpdating = previoScreen
-    Application.EnableEvents = previoEvents
-    Application.DisplayAlerts = previoAlerts
-    Application.Calculation = previoCalculo
+    Application.ScreenUpdating = screenAnterior
+    Application.EnableEvents = eventosAnterior
+    Application.DisplayAlerts = alertasAnteriores
+    Application.Calculation = calculoAnterior
     On Error Resume Next
     CargaForm.Hide
     On Error GoTo 0
-
-    If Len(incidencias) > 0 Then
-        MsgBox "PPT guardado en:" & vbCrLf & rutaSalida & vbCrLf & vbCrLf & _
-               "Atencion: algunas partes no se pudieron incorporar:" & _
-               Left$(incidencias, 2600), vbExclamation, "Resultado de generacion"
+    If Len(aviso) > 0 Then
+        MsgBox "PPT guardado:" & vbCrLf & archivoSalida & vbCrLf & vbCrLf & _
+               "Comprobar estos detalles:" & Left$(aviso, 2800), vbExclamation
     Else
-        MsgBox "PPT generado correctamente:" & vbCrLf & rutaSalida, vbInformation
+        MsgBox "PPT generado y guardado:" & vbCrLf & archivoSalida, vbInformation
     End If
     Exit Sub
-
 ErrorGeneral:
-    numError = Err.Number
-    descripcionError = Err.Description
-    Application.CutCopyMode = False
-    Application.ScreenUpdating = previoScreen
-    Application.EnableEvents = previoEvents
-    Application.DisplayAlerts = previoAlerts
-    Application.Calculation = previoCalculo
+    valErr = Err.Number: txtErr = Err.Description
     On Error Resume Next
+    If Not libroOrigen Is Nothing Then libroOrigen.Close SaveChanges:=False
+    Application.CutCopyMode = False
+    Application.ScreenUpdating = screenAnterior
+    Application.EnableEvents = eventosAnterior
+    Application.DisplayAlerts = alertasAnteriores
+    Application.Calculation = calculoAnterior
     CargaForm.Hide
     On Error GoTo 0
-    MsgBox "Error generando PowerPoint (curso: " & curso & _
-           ", paso: " & falloPaso & ")" & vbCrLf & _
-           CStr(numError) & ": " & descripcionError, vbCritical
+    MsgBox "Error en GENERAR_POWERPOINT / " & curso & " / " & paso & vbCrLf & _
+           CStr(valErr) & " - " & txtErr, vbCritical
 End Sub
