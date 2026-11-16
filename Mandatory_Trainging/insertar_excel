@@ -1,0 +1,198 @@
+Sub InsertarImagenYObjetoOLE()
+
+ 
+
+    ' Definir las variables
+
+    Dim pptApp As Object
+
+    Dim pptPres As Object
+
+    Dim pptSlide As Object
+
+    Dim slideIndex As Integer
+
+    Dim excelFilePath As String
+
+    Dim imageFilePath As String
+
+    Dim imageShape As Object
+
+    Dim oleShape As Object
+
+    Dim slideWidth As Single
+
+    Dim slideHeight As Single
+
+    Dim imageWidth As Single
+
+    Dim imageHeight As Single
+
+    Dim oleWidth As Single
+
+    Dim oleHeight As Single
+
+    Dim excelApp As Object
+
+    Dim excelWb As Object
+
+    Dim excelSheet As Object
+
+    Dim rangeToCopy As Object
+
+    Dim tempImageFilePath As String
+
+ 
+
+    ' Establecer la ruta del archivo de Excel
+
+    excelFilePath = "\\spi60001\A400M\Lean_Manufacturing\10.- PCM\28. PCM\1.1 Plan de Formación\2024\0-TCO 2024\TAOA TCO jul.12.2024.xlsx" ' Cambia esta ruta por la del archivo de Excel
+
+ 
+
+    ' Establecer la ruta de la imagen
+
+    imageFilePath = "C:\Users\U35559\Desktop\P&I\DETAIL.png" ' Cambia esta ruta por la de tu imagen
+
+ 
+
+    ' Crear una instancia de PowerPoint
+
+    Set pptApp = CreateObject("PowerPoint.Application")
+
+    pptApp.Visible = True
+
+ 
+
+    ' Abrir la presentación de PowerPoint
+
+    Set pptPres = pptApp.Presentations.Open("C:\Users\U35559\Desktop\P&I\Mandatory Training Template.pptx") ' Cambia esta ruta por la del archivo de PowerPoint
+
+ 
+
+    ' Seleccionar la diapositiva donde se insertará la imagen y el objeto OLE
+
+    slideIndex = 3 ' Cambia esto al índice de la diapositiva donde deseas insertar la imagen y el objeto OLE
+
+    Set pptSlide = pptPres.Slides(slideIndex)
+
+ 
+
+    ' Obtener las dimensiones de la diapositiva
+
+    slideWidth = pptSlide.Master.Width
+
+    slideHeight = pptSlide.Master.Height
+
+ 
+
+    ' Definir dimensiones de la imagen y del objeto OLE
+
+    imageWidth = 300 ' Ajusta el ancho de la imagen
+
+    imageHeight = 150 ' Ajusta la altura de la imagen
+
+    oleWidth = 100 ' Ajusta el ancho del objeto OLE
+
+    oleHeight = 75 ' Ajusta la altura del objeto OLE
+
+ 
+
+    ' Insertar la imagen en PowerPoint
+
+    Set imageShape = pptSlide.Shapes.AddPicture(imageFilePath, msoFalse, msoCTrue, slideWidth - imageWidth - 50, (slideHeight - imageHeight) / 2, imageWidth, imageHeight) ' Colocar la imagen a la derecha
+
+ 
+
+    ' Crear una instancia de Excel
+
+    Set excelApp = CreateObject("Excel.Application")
+
+    excelApp.Visible = False
+
+ 
+
+    ' Abrir el archivo de Excel
+
+    Set excelWb = excelApp.Workbooks.Open(excelFilePath)
+
+   
+
+    ' Seleccionar la hoja y el rango que se mostrará en el objeto OLE
+
+    Set excelSheet = excelWb.Sheets(1) ' Cambia esto según la hoja deseada
+
+    Set rangeToCopy = excelSheet.Range("A1:D10") ' Cambia esto según el rango deseado
+
+ 
+
+    ' Copiar el rango como imagen temporal
+
+    tempImageFilePath = "C:\Users\U35559\Desktop\P&I\TempRangeImage.png" ' Cambia esta ruta si es necesario
+
+    rangeToCopy.CopyPicture Appearance:=xlScreen, Format:=xlPicture
+
+    With excelApp.ActiveSheet.ChartObjects.Add(Left:=0, Top:=0, Width:=rangeToCopy.Width, Height:=rangeToCopy.Height).Chart
+
+        .Paste
+
+        .Export Filename:=tempImageFilePath, FilterName:="PNG"
+
+    End With
+
+    excelWb.Close False
+
+    excelApp.Quit
+
+ 
+
+    ' Insertar el archivo de Excel como un objeto OLE en PowerPoint
+
+    Set oleShape = pptSlide.Shapes.AddOLEObject(Left:=slideWidth - imageWidth - 50 + (imageWidth - oleWidth) / 2, _
+                                                Top:=(slideHeight - oleHeight) / 2, _
+                                                Width:=oleWidth, _
+                                                Height:=oleHeight, _
+                                                Filename:=excelFilePath, _
+                                                DisplayAsIcon:=False)
+
+ 
+
+    ' Insertar la imagen del rango copiado en PowerPoint
+
+    Set imageShape = pptSlide.Shapes.AddPicture(tempImageFilePath, msoFalse, msoCTrue, slideWidth - imageWidth - 50, (slideHeight - imageHeight) / 2, imageWidth, imageHeight)
+
+    imageShape.LockAspectRatio = msoTrue ' Mantener la relación de aspecto
+
+ 
+
+    ' Eliminar la imagen temporal
+
+    Kill tempImageFilePath
+
+ 
+
+    ' Liberar los objetos
+
+    Set imageShape = Nothing
+
+    Set oleShape = Nothing
+
+    Set pptSlide = Nothing
+
+    Set pptPres = Nothing
+
+    Set pptApp = Nothing
+
+    Set excelSheet = Nothing
+
+    Set excelWb = Nothing
+
+    Set excelApp = Nothing
+
+ 
+
+
+ 
+
+End Sub
+
