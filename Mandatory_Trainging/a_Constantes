@@ -1,0 +1,5 @@
+Option Explicit
+
+Public Const Ruta_Temp As String = "C:\Temp\"
+Public Const Nombre_Export_Ppt As String = "Mandatory Training.pptx"
+
