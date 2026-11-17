@@ -1,0 +1,950 @@
+﻿Option Explicit
+
+' Extrae "Mes.Día.Año" del nombre, ignorando sufijo " (n)" y la extensión.
+Private Function GetFechaFromNombre(ByVal s As String) As String
+    Dim re As Object, ms As Object, m As Object
+    Set re = CreateObject("VBScript.RegExp")
+    With re
+        .Pattern = "([A-Za-zÁÉÍÓÚÜÑáéíóúüñ]{3,})\.(\d{1,2})\.(\d{4})(?=\s*(?:\(\d+\))?\s*(?:\.\w+)?$)"
+        .Global = False
+        .IgnoreCase = True
+    End With
+    Set ms = re.Execute(s)
+    If ms.Count > 0 Then
+        Set m = ms(0)
+        GetFechaFromNombre = LCase$(m.SubMatches(0)) & "." & m.SubMatches(1) & "." & m.SubMatches(2)
+    Else
+        GetFechaFromNombre = ""
+    End If
+End Function
+
+Sub MUESTRA_HOJA_PARAMETROS()
+    Dim ws As Worksheet
+    Set ws = ThisWorkbook.Sheets("CONFIGURACION")
+    ws.Visible = xlSheetVisible
+    ws.Activate
+End Sub
+
+Sub RELLENA_TABLAS()
+
+    With Application
+        .ScreenUpdating = False
+        .EnableEvents = False
+        .DisplayAlerts = False
+        .CutCopyMode = False
+        .Calculation = xlCalculationManual
+    End With
+
+    '---------------------------------------------------------------------------------------------'
+    ' Variables
+    '---------------------------------------------------------------------------------------------'
+    Dim Lista_Archivos()
+    Dim Hoja6 As Worksheet
+    Dim Tabla_Rutas
+    Dim wb_Datos As Workbook, ws_Datos As Worksheet
+    Dim Celda_Ref As Range, Celda_Origen As Range, Celda_Destino As Range, Rango_Origen As Range, Rango_Destino As Range, Celda_Total_Mes As Range
+    Dim cabeceraHorizontalHistorialTotalMesesDelAñoRango As Range, Celda_Enlace As Range, Celda_Total As Range
+    Dim curriculum As String, añoControlPanel As String, mesControlPanel As String, Carpeta As String, Archivo As String, Nombre_Hoja As String, rangoTablaDatosOrigen As String
+    Dim i As Long, j As Long, nFil As Long, nCol As Long, Dif_Filas As Long, Dif_Col As Long
+    Dim totalMesOrigen As Double
+    Dim Ok As Boolean
+   
+    Dim rangoDestinoTablaKPI As String
+    Dim rutaAbsolutaInforme As String
+    Dim direccionCeldaTotalMesOrigen As String
+    Dim direccionCeldaCabeceraHorizontalTotalMeses As String
+    Dim celdaMesTotalMeses As Range
+   
+    Dim nombreSinFechaWBOrigenDatos As String
+    Dim nombreArchivo As String
+    Dim fechaToken As String
+    Dim partesFecha() As String
+    Dim textoMesMinusculasNombreArchivo As String
+    Dim numeroMes As Integer
+    Dim añoNombreArchivo As String
+   
+    Dim filaTablaListObject As ListRow
+    Dim referenciaTablaListObject As ListObject
+    ' Variables para seleccionar el informe más reciente
+Dim fechaMasReciente As Date
+Dim fechaCandidata As Date
+Dim mesInforme As Integer
+Dim diaInforme As Integer
+Dim anioInforme As Integer
+Dim mesHistorial As Long
+Dim extensionInforme As String
+
+    '---------------------------------------------------------------------------------------------'
+    ' Obtenemos la fecha seleccionada por el usuario en la hoja MENU
+    '---------------------------------------------------------------------------------------------'
+    añoControlPanel = hControl.Range("AÑO")
+    mesControlPanel = hControl.Range("MES")
+    ' Mes seleccionado para registrar el resultado en el historial
+mesHistorial = CLng(getNumeroMes(LCase$(Trim$(mesControlPanel))))
+
+    '---------------------------------------------------------------------------------------------'
+    ' Obtener datos de la hoja TABLAS
+    '---------------------------------------------------------------------------------------------'
+
+    Set Hoja6 = ThisWorkbook.Sheets("CONFIGURACION")
+    Set referenciaTablaListObject = Hoja6.ListObjects("Tabla_Rutas")
+
+    Tabla_Rutas = referenciaTablaListObject.DataBodyRange.Value
+
+    For i = LBound(Tabla_Rutas) To UBound(Tabla_Rutas)
+
+        curriculum = Tabla_Rutas(i, 1)
+
+        If curriculum = "EHS Manager" Or curriculum = "EHS Senior & Middle Manager" Then
+            curriculum = curriculum
+        End If
+
+        Carpeta = IIf(Right(Tabla_Rutas(i, 2), 1) = "\", Tabla_Rutas(i, 2), Tabla_Rutas(i, 2) & "\")
+        Nombre_Hoja = Tabla_Rutas(i, 4)
+
+        'Obtener listado de archivos de la carpeta del informe actualmente analizandose
+        '-------------------------------------------------------
+        ' BUSCAR EL INFORME MAS RECIENTE DISPONIBLE
+        ' Se utiliza la fecha del nombre del archivo,
+        ' independientemente del mes seleccionado en MENU.
+        '-------------------------------------------------------
+
+
+        Ok = False
+        Archivo = ""
+        rutaAbsolutaInforme = ""
+        fechaMasReciente = 0
+
+
+        ' Obtener los archivos de la carpeta configurada
+        Erase Lista_Archivos
+        Lista_Archivos = DAME_ARCHIVOS_CARPETA(Carpeta)
+
+
+        ' Comprobar que la matriz contiene archivos
+        On Error Resume Next
+        Err.Clear
+        nFil = UBound(Lista_Archivos, 1)
+
+
+        If Err.Number <> 0 Then
+            Err.Clear
+            On Error GoTo 0
+
+
+            MsgBox "No se encontraron archivos en la carpeta:" & _
+                   vbCrLf & Carpeta, vbExclamation
+
+
+            GoTo Siguiente_Informe
+        End If
+
+
+        On Error GoTo 0
+
+
+        Call MUESTRA_HOJA_PARAMETROS
+
+
+        ' Recorrer todos los archivos para encontrar
+        ' el informe con la fecha mas reciente
+        For j = LBound(Lista_Archivos, 1) To _
+                 UBound(Lista_Archivos, 1)
+
+
+            nombreSinFechaWBOrigenDatos = Lista_Archivos(j, 1)
+
+
+            ' Excluir archivos temporales de Excel
+            If Left$(nombreSinFechaWBOrigenDatos, 2) <> "~$" Then
+
+
+                ' Admitir formatos habituales de Excel
+                extensionInforme = LCase$(Mid$( _
+                    nombreSinFechaWBOrigenDatos, _
+                    InStrRev(nombreSinFechaWBOrigenDatos, ".") + 1))
+
+
+                If extensionInforme = "xlsx" Or _
+                   extensionInforme = "xlsm" Or _
+                   extensionInforme = "xlsb" Or _
+                   extensionInforme = "xls" Then
+
+
+                    ' Comprobar que el nombre corresponde al curso
+                    If InStr(1, nombreSinFechaWBOrigenDatos, _
+                             CStr(Tabla_Rutas(i, 3)), _
+                             vbTextCompare) > 0 Then
+
+
+                        ' Extraer fecha del nombre del archivo
+                        fechaToken = GetFechaFromNombre( _
+                                     nombreSinFechaWBOrigenDatos)
+
+
+                        If Len(fechaToken) > 0 Then
+
+
+                            partesFecha = Split(fechaToken, ".")
+
+
+                            textoMesMinusculasNombreArchivo = _
+                                LCase$(partesFecha(0))
+
+
+                            ' Identificar el mes en espanol o ingles
+                            Select Case textoMesMinusculasNombreArchivo
+
+
+                                Case "jan", "ene"
+                                    mesInforme = 1
+
+
+                                Case "feb"
+                                    mesInforme = 2
+
+
+                                Case "mar"
+                                    mesInforme = 3
+
+
+                                Case "apr", "abr"
+                                    mesInforme = 4
+
+
+                                Case "may"
+                                    mesInforme = 5
+
+
+                                Case "jun"
+                                    mesInforme = 6
+
+
+                                Case "jul"
+                                    mesInforme = 7
+
+
+                                Case "aug", "ago"
+                                    mesInforme = 8
+
+
+                                Case "sep", "sept"
+                                    mesInforme = 9
+
+
+                                Case "oct"
+                                    mesInforme = 10
+
+
+                                Case "nov"
+                                    mesInforme = 11
+
+
+                                Case "dec", "dic"
+                                    mesInforme = 12
+
+
+                                Case Else
+                                    mesInforme = 0
+
+
+                            End Select
+
+
+                            If mesInforme > 0 Then
+
+
+                                diaInforme = CInt(partesFecha(1))
+                                anioInforme = CInt(partesFecha(2))
+
+
+                                ' Validar que la fecha sea real
+                                fechaCandidata = DateSerial( _
+                                    anioInforme, mesInforme, diaInforme)
+
+
+                                If Year(fechaCandidata) = anioInforme And _
+                                   Month(fechaCandidata) = mesInforme And _
+                                   Day(fechaCandidata) = diaInforme Then
+
+
+                                    ' Seleccionar la fecha mas reciente
+                                    If Not Ok Or _
+                                       fechaCandidata > fechaMasReciente Then
+
+
+                                        fechaMasReciente = fechaCandidata
+                                        Archivo = nombreSinFechaWBOrigenDatos
+                                        rutaAbsolutaInforme = Carpeta & Archivo
+                                        Ok = True
+
+
+                                    End If
+
+
+                                End If
+
+
+                            End If
+
+
+                        End If
+
+
+                    End If
+
+
+                End If
+
+
+            End If
+
+
+        Next j
+
+
+        ' Si no hay informes validos, omitir este curso
+        If Not Ok Then
+
+
+            MsgBox "No se ha encontrado un informe valido para: " & _
+                   curriculum & vbCrLf & _
+                   "Carpeta: " & Carpeta, vbExclamation
+
+
+            GoTo Siguiente_Informe
+
+
+        End If
+
+
+        ' Actualizar la ruta del informe seleccionado
+        ' en la misma columna que utilizaba la macro original
+        Set filaTablaListObject = referenciaTablaListObject.ListRows(i)
+
+
+        filaTablaListObject.Range(1, 11).Value = _
+            rutaAbsolutaInforme
+
+
+        '-------------------------------------------------------
+        ' FIN DE LA BUSQUEDA DEL INFORME MAS RECIENTE
+        '-------------------------------------------------------
+
+        'Creamos una copia del informe para si tienen que abrir el original que no le salga a nadie un mensaje de que ya está abierto
+        Set wb_Datos = CREAR_COPIA_INFORME(Carpeta, Archivo)
+
+        'Almacenamos la hoja con la tabla KPI en la variable
+        ' Comprobar que existe la hoja esperada
+Dim hojaEncontrada As Boolean
+Dim hojaComprobar As Worksheet
+Dim hojasDisponibles As String
+
+
+hojaEncontrada = False
+hojasDisponibles = ""
+
+
+For Each hojaComprobar In wb_Datos.Worksheets
+
+
+    hojasDisponibles = hojasDisponibles & _
+        vbCrLf & " - " & hojaComprobar.Name
+
+
+    If StrComp(Trim$(hojaComprobar.Name), _
+               Trim$(Nombre_Hoja), vbTextCompare) = 0 Then
+
+
+        Set ws_Datos = hojaComprobar
+        hojaEncontrada = True
+        Exit For
+
+
+    End If
+
+
+Next hojaComprobar
+
+
+If Not hojaEncontrada Then
+
+
+    MsgBox "ERROR: NO SE ENCUENTRA LA HOJA" & vbCrLf & vbCrLf & _
+           "Curso: " & curriculum & vbCrLf & _
+           "Archivo: " & wb_Datos.Name & vbCrLf & _
+           "Hoja esperada: " & Nombre_Hoja & vbCrLf & _
+           "Hojas disponibles:" & hojasDisponibles, _
+           vbExclamation, "Diagnostico de informes"
+
+
+    wb_Datos.Close SaveChanges:=False
+    Set wb_Datos = Nothing
+
+
+    GoTo Siguiente_Informe
+
+
+End If
+
+        'Guardamos la tabla origen usando el rango definido en la hoja CONFIGURACION columna G, la información que haya en ese rango
+        rangoTablaDatosOrigen = Tabla_Rutas(i, 5)
+        Set Rango_Origen = ws_Datos.Range(rangoTablaDatosOrigen)
+
+        'Guardamos el total de la tabla origen con la direccion de celda definida en la hoja CONFIGURACION columna I
+        direccionCeldaTotalMesOrigen = Tabla_Rutas(i, 7)
+        If direccionCeldaTotalMesOrigen <> "" Then
+            totalMesOrigen = ws_Datos.Range(direccionCeldaTotalMesOrigen)
+        Else
+            totalMesOrigen = 0
+        End If
+
+        'Guardamos la celda definida en la hoja CONFIGURACION columna H, donde pegaremos la tabla en la hoja TABLAS
+        rangoDestinoTablaKPI = Tabla_Rutas(i, 6)
+        Set Rango_Destino = ThisWorkbook.Sheets(curriculum).Range(rangoDestinoTablaKPI)
+
+        'Si el rango tiene celdas unidas las descombinamos porque si no no deja pegar luego la tabla
+        If Rango_Destino.MergeCells Then
+            Rango_Destino.UnMerge
+        End If
+        
+        'Desactivar el filtro temporalmente
+        On Error Resume Next
+        ws_Datos.AutoFilterMode = False
+        On Error GoTo 0
+
+        'Con la direccion de celda definida en la hoja CONFIGURACION columna H, pegaremos la tabla en la hoja TABLAS, tras copiar  la tabla
+        On Error Resume Next
+        Rango_Destino.ClearContents
+        Rango_Destino.ClearFormats
+
+        Rango_Origen.Copy
+        Rango_Destino.PasteSpecial xlPasteValues
+        Rango_Destino.PasteSpecial xlPasteFormats
+        On Error GoTo 0
+
+        'Guardamos el rango donde está la cabecera horizontal de la tabla historial del total de los meses del año
+        direccionCeldaCabeceraHorizontalTotalMeses = Tabla_Rutas(i, 8)
+        Set cabeceraHorizontalHistorialTotalMesesDelAñoRango = ThisWorkbook.Sheets(curriculum).Range(direccionCeldaCabeceraHorizontalTotalMeses)
+        Set celdaMesTotalMeses = cabeceraHorizontalHistorialTotalMesesDelAñoRango.Offset(0, mesHistorial)
+
+        'Nos deplazamos a la derecha el número de mes que haya elegido el usuario en control panel y allí colocaremos el valor del mes
+        celdaMesTotalMeses.Value = IIf(totalMesOrigen = 0, "-", totalMesOrigen) 'Si el totalMesOrigen es 0, que en vez de un 0, ponga el caracter "-"
+
+        'Cerramos la copia del informe de la que copiamos la tabla origen
+        wb_Datos.Close (False)
+
+Siguiente_Informe:
+    Next
+
+    CargaForm.Hide
+    CargaForm.mensajeLabel = "Tablas de las hojas de los curriculum de este libro actualizadas, click en la X para salir"
+    CargaForm.Show
+
+    ThisWorkbook.Sheets("MENU").Activate
+
+    With Application
+        .ScreenUpdating = True
+        .EnableEvents = True
+        .DisplayAlerts = True
+        .CutCopyMode = False
+        .Calculation = xlCalculationAutomatic
+    End With
+End Sub
+
+' ================================================================
+' GENERACION POWERPOINT - VERSION CON CONTROL DE DISEÑO
+' NO CAMBIA LA MACRO RELLENA_TABLAS NI LOS DEMAS PROCEDIMIENTOS.
+' ================================================================
+Private Sub MT_BorrarContenidoAnterior(ByVal s As PowerPoint.Slide, ByVal limpiarNotas As Boolean)
+    Dim k As Long
+    Dim sh As PowerPoint.Shape
+    For k = s.Shapes.Count To 1 Step -1
+        Set sh = s.Shapes(k)
+        ' Conservar exclusivamente las marcas de cabecera y el logo.
+        ' Borrar imagenes/objetos insertados en la zona de contenido.
+        If sh.Top > 74 Then
+            If sh.Type = msoPicture Or sh.Type = msoLinkedPicture _
+               Or sh.Type = msoEmbeddedOLEObject Or sh.Type = msoLinkedOLEObject _
+               Or sh.Type = msoChart Then
+                sh.Delete
+            ElseIf limpiarNotas Then
+                ' En 14-18 se retiran tambien notas y textos anteriores.
+                If sh.HasTextFrame Then
+                    If sh.TextFrame.HasText Then sh.Delete
+                End If
+            End If
+        End If
+    Next k
+End Sub
+
+Private Sub MT_PonerTitulo(ByVal s As PowerPoint.Slide, ByVal titulo As String, _
+                          ByVal anchoSlide As Single)
+    Dim sh As PowerPoint.Shape, objetivo As PowerPoint.Shape
+    For Each sh In s.Shapes
+        If sh.HasTextFrame Then
+            If sh.Left < 75 And sh.Top >= 30 And sh.Top < 78 And sh.Width > anchoSlide * 0.65 Then
+                Set objetivo = sh
+                Exit For
+            End If
+        End If
+    Next sh
+    If objetivo Is Nothing Then
+        Set objetivo = s.Shapes.AddTextbox(msoTextOrientationHorizontal, 36, 44, anchoSlide - 72, 35)
+    End If
+    With objetivo
+        .Left = 36
+        .Top = 44
+        .Width = anchoSlide - 72
+        .Height = 32
+        .TextFrame.TextRange.Text = titulo
+        .TextFrame.TextRange.Font.Size = 20
+        .TextFrame.TextRange.Font.Bold = msoTrue
+        .TextFrame.TextRange.Font.Name = "Arial"
+        .TextFrame.TextRange.Font.Color.RGB = RGB(20, 45, 85)
+    End With
+End Sub
+
+Private Sub MT_Encajar(ByVal sh As PowerPoint.Shape, ByVal maxAncho As Single, _
+                      ByVal maxAlto As Single)
+    sh.LockAspectRatio = msoTrue
+    If sh.Width > maxAncho Then sh.Width = maxAncho
+    If sh.Height > maxAlto Then sh.Height = maxAlto
+End Sub
+
+
+' Intenta copiar una tabla como imagen. Se reintenta porque el portapapeles
+' compartido entre Excel y PowerPoint puede estar temporalmente ocupado.
+Private Function MT_PegarTablaSegura(ByVal rango As Excel.Range, _
+                                      ByVal destino As PowerPoint.Slide, _
+                                      ByRef errorDetalle As String) As PowerPoint.Shape
+    Dim intento As Long, formato As Long
+    Dim objetos As PowerPoint.ShapeRange
+    Dim numeroError As Long, descripcionError As String
+
+    errorDetalle = ""
+    For intento = 1 To 6
+        Set objetos = Nothing
+        rango.Parent.Parent.Activate
+        rango.Parent.Activate
+        DoEvents
+        Application.CutCopyMode = False
+
+        On Error Resume Next
+        Err.Clear
+        ' Formato vectorial en primer lugar, bitmap como alternativa.
+        If intento <= 3 Then
+            rango.CopyPicture Appearance:=xlScreen, Format:=xlPicture
+            formato = ppPasteEnhancedMetafile
+        Else
+            rango.CopyPicture Appearance:=xlScreen, Format:=xlBitmap
+            formato = ppPasteBitmap
+        End If
+        numeroError = Err.Number: descripcionError = Err.Description
+        If numeroError = 0 Then
+            DoEvents
+            Err.Clear
+            Set objetos = destino.Shapes.PasteSpecial(DataType:=formato)
+            numeroError = Err.Number: descripcionError = Err.Description
+        End If
+        If numeroError <> 0 And Application.CutCopyMode <> False Then
+            Err.Clear
+            Set objetos = Nothing
+            ' Algunos equipos admiten Paste, pero no PasteSpecial.
+            Set objetos = destino.Shapes.Paste
+            numeroError = Err.Number: descripcionError = Err.Description
+        End If
+        On Error GoTo 0
+        If Not objetos Is Nothing Then
+            Set MT_PegarTablaSegura = objetos(1)
+            Application.CutCopyMode = False
+            Exit Function
+        End If
+        errorDetalle = "Intento " & intento & ": " & descripcionError
+        DoEvents
+    Next intento
+    Application.CutCopyMode = False
+End Function
+
+' Exportar el grafico directamente a PNG evita depender del portapapeles.
+Private Function MT_InsertarGraficoSeguro(ByVal graficoExcel As Excel.ChartObject, _
+                                           ByVal destino As PowerPoint.Slide, _
+                                           ByRef errorDetalle As String) As PowerPoint.Shape
+    Dim archivoTemporal As String, exportado As Boolean
+    Dim formas As PowerPoint.ShapeRange
+    Dim intento As Long
+
+    archivoTemporal = Environ$("TEMP") & "\MT_Grafico_" & _
+                      Format$(Now, "yyyymmdd_hhnnss") & "_" & _
+                      CStr(destino.SlideIndex) & ".png"
+    errorDetalle = ""
+    On Error Resume Next
+    If Len(Dir$(archivoTemporal)) > 0 Then Kill archivoTemporal
+    Err.Clear
+    exportado = graficoExcel.Chart.Export(Filename:=archivoTemporal, FilterName:="PNG")
+    If exportado And Len(Dir$(archivoTemporal)) > 0 Then
+        Set MT_InsertarGraficoSeguro = destino.Shapes.AddPicture( _
+            FileName:=archivoTemporal, LinkToFile:=msoFalse, _
+            SaveWithDocument:=msoTrue, Left:=0, Top:=0)
+    End If
+    If MT_InsertarGraficoSeguro Is Nothing Then
+        errorDetalle = "Exportacion PNG no disponible: " & Err.Description
+        Err.Clear
+        For intento = 1 To 4
+            Set formas = Nothing
+            graficoExcel.Parent.Activate
+            graficoExcel.CopyPicture Appearance:=xlScreen, Format:=xlPicture
+            DoEvents
+            Err.Clear
+            Set formas = destino.Shapes.Paste
+            If Not formas Is Nothing Then
+                Set MT_InsertarGraficoSeguro = formas(1)
+                Exit For
+            End If
+            errorDetalle = Err.Description
+            DoEvents
+        Next intento
+    End If
+    If Len(Dir$(archivoTemporal)) > 0 Then Kill archivoTemporal
+    On Error GoTo 0
+End Function
+
+
+Private Function MT_SlideFisica(ByVal slideLogica As Long) As Long
+    ' Se reserva la diapositiva 10 para el anexo fijo de FOD.
+    If slideLogica >= 10 Then
+        MT_SlideFisica = slideLogica + 1
+    Else
+        MT_SlideFisica = slideLogica
+    End If
+End Function
+
+Private Sub MT_AgregarAvisoFOD(ByVal s As PowerPoint.Slide, ByVal anchoSlide As Single, ByVal altoSlide As Single)
+    Dim sh As PowerPoint.Shape
+    Dim caja As PowerPoint.Shape
+    Dim flecha As PowerPoint.Shape
+
+    ' Borrar aviso anterior si existiera.
+    For Each sh In s.Shapes
+        If sh.Name = "MT_FOD_AVISO" Or sh.Name = "MT_FOD_FLECHA" Then sh.Delete
+    Next sh
+
+    Set caja = s.Shapes.AddShape(msoShapeRectangle, 16, altoSlide - 112, 120, 32)
+    caja.Name = "MT_FOD_AVISO"
+    With caja
+        .Fill.ForeColor.RGB = RGB(243, 191, 72)
+        .Line.Visible = msoFalse
+        .TextFrame.TextRange.Text = "ANEXO EN SIGUIENTE" & vbCrLf & "DIAPOSITIVA"
+        .TextFrame.TextRange.Font.Name = "Arial"
+        .TextFrame.TextRange.Font.Size = 10
+        .TextFrame.TextRange.Font.Bold = msoTrue
+        .TextFrame.TextRange.ParagraphFormat.Alignment = ppAlignCenter
+        .TextFrame.VerticalAnchor = msoAnchorMiddle
+    End With
+
+    Set flecha = s.Shapes.AddShape(msoShapeDownArrow, 66, altoSlide - 83, 24, 22)
+    flecha.Name = "MT_FOD_FLECHA"
+    With flecha
+        .Fill.ForeColor.RGB = RGB(243, 191, 72)
+        .Line.Visible = msoFalse
+    End With
+End Sub
+
+Sub GENERAR_POWERPOINT()
+    Const INCH As Single = 72
+    Dim appPPT As PowerPoint.Application, ppt As PowerPoint.Presentation
+    Dim sl As PowerPoint.Slide, duplicadas As PowerPoint.SlideRange
+    Dim conf As Worksheet, ws As Worksheet, wsOrigen As Worksheet
+    Dim libroOrigen As Workbook
+    Dim filas As Variant, curso As String, rangoKPI As String, rangoOrigen As String
+    Dim nombreHoja As String, nombreGrafico As String, ruta As String, rutaPlantilla As String
+    Dim t As PowerPoint.Shape, g As PowerPoint.Shape, icono As PowerPoint.Shape
+    Dim pegadas As PowerPoint.ShapeRange
+    Dim co As ChartObject, coElegido As ChartObject
+    Dim n As Long, nPpt As Long, i As Long, intento As Long, cuenta As Long
+    Dim W As Single, H As Single, areaTop As Single, areaBottom As Single
+    Dim anchoMax As Single, altoTabla As Single, altoGrafico As Single, disponible As Single
+    Dim xIcono As Single, yIcono As Single, pieGrafico As Single
+    Dim aviso As String, detalle As String, archivoSalida As String, carpetaSalida As String
+    Dim baseNombre As String, paso As String
+    Dim valErr As Long, txtErr As String
+    Dim screenAnterior As Boolean, eventosAnterior As Boolean
+    Dim alertasAnteriores As Boolean, calculoAnterior As XlCalculation
+    Dim plantillaPrevia As String
+    Dim esNuevo As Boolean, esEHS As Boolean
+
+    screenAnterior = Application.ScreenUpdating
+    eventosAnterior = Application.EnableEvents
+    alertasAnteriores = Application.DisplayAlerts
+    calculoAnterior = Application.Calculation
+    On Error GoTo ErrorGeneral
+    Application.ScreenUpdating = False
+    Application.EnableEvents = False
+    Application.DisplayAlerts = False
+    Application.Calculation = xlCalculationManual
+
+    Set conf = ThisWorkbook.Worksheets("CONFIGURACION")
+    filas = conf.ListObjects("Tabla_Rutas").DataBodyRange.Value
+    rutaPlantilla = CStr(conf.Range("Ruta_Template_PPT").Value)
+    paso = "Acceder a plantilla"
+    If Len(Dir(rutaPlantilla)) = 0 Then Err.Raise vbObjectError + 801, , "Plantilla no encontrada: " & rutaPlantilla
+    If Len(Dir(Ruta_Temp, vbDirectory)) = 0 Then MkDir Ruta_Temp
+    plantillaPrevia = Ruta_Temp & Nombre_Export_Ppt
+    If Len(Dir(plantillaPrevia)) > 0 Then Kill plantillaPrevia
+    FileCopy rutaPlantilla, plantillaPrevia
+    Set appPPT = New PowerPoint.Application
+    appPPT.Visible = msoTrue
+    Set ppt = appPPT.Presentations.Open(plantillaPrevia)
+    W = ppt.PageSetup.SlideWidth
+    H = ppt.PageSetup.SlideHeight
+
+    paso = "Actualizar portada"
+    Call ModificarPrimeraDiapositivaConFecha
+
+    ' IMPORTANTE: se reserva la diapositiva 10 para el anexo fijo de FOD.
+    ' A partir de Human Factors, las diapositivas se desplazan +1 en PowerPoint.
+    ' La plantilla debe llegar hasta la 19 para acomodar ese anexo.
+    paso = "Completar plantilla a 19 slides"
+    If ppt.Slides.Count >= 14 Then
+        Do While ppt.Slides.Count < 19
+            Set duplicadas = ppt.Slides(14).Duplicate
+            duplicadas(1).MoveTo ppt.Slides.Count
+        Loop
+    Else
+        Do While ppt.Slides.Count < 19
+            ppt.Slides.Add ppt.Slides.Count + 1, ppLayoutBlank
+        Loop
+    End If
+
+    ' Borrar SOLO el contenido de cuerpo anterior, no el estilo corporativo.
+    ' Se conserva INTACTA la diapositiva 10, que es el anexo de FOD de la plantilla.
+    For n = 3 To ppt.Slides.Count
+        If n <> 10 Then MT_BorrarContenidoAnterior ppt.Slides(n), (n >= 14)
+    Next n
+
+    For i = LBound(filas, 1) To UBound(filas, 1)
+        paso = "Leer configuracion"
+        curso = Trim$(CStr(filas(i, 1)))
+        If Len(curso) = 0 Then GoTo SiguienteCurso
+        rangoKPI = Trim$(CStr(filas(i, 6)))
+        rangoOrigen = Trim$(CStr(filas(i, 5)))
+        nombreHoja = Trim$(CStr(filas(i, 4)))
+        nombreGrafico = Trim$(CStr(filas(i, 9)))
+        ruta = Trim$(CStr(filas(i, 11)))
+        n = CLng(Val(CStr(filas(i, 10))))
+        nPpt = MT_SlideFisica(n)
+        If n < 3 Or nPpt > ppt.Slides.Count Then
+            aviso = aviso & vbCrLf & curso & ": numero de slide no valido (logica " & n & ", ppt " & nPpt & ")."
+            GoTo SiguienteCurso
+        End If
+        Set sl = ppt.Slides(nPpt)
+        esNuevo = n >= 14
+        esEHS = (curso = "EHS Manager" Or curso = "EHS Senior & Middle Manager")
+        If esNuevo Then MT_PonerTitulo sl, curso, W
+
+        Set ws = Nothing: Set wsOrigen = Nothing: Set libroOrigen = Nothing
+        Set coElegido = Nothing: Set t = Nothing: Set g = Nothing: Set icono = Nothing
+        On Error Resume Next
+        Set ws = ThisWorkbook.Worksheets(curso)
+        On Error GoTo ErrorGeneral
+        ' Alias especifico de OnBoarding: nombre real de la pestana.
+        If ws Is Nothing And StrComp(curso, "OnBoarding", vbTextCompare) = 0 Then
+            On Error Resume Next
+            Set ws = ThisWorkbook.Worksheets("OnBoarding Aviation Safety")
+            On Error GoTo ErrorGeneral
+        End If
+
+        ' Si la hoja principal de OnBoarding no existe, tomar solo el KPI
+        ' directamente del ultimo informe. No altera la actualizacion de tablas.
+        If ws Is Nothing And Len(ruta) > 0 And Len(nombreHoja) > 0 Then
+            If Len(Dir(ruta)) > 0 Then
+                paso = "Abrir KPI alternativo de " & curso
+                On Error Resume Next
+                Set libroOrigen = Workbooks.Open(ruta, ReadOnly:=True, UpdateLinks:=False)
+                If Not libroOrigen Is Nothing Then Set wsOrigen = libroOrigen.Worksheets(nombreHoja)
+                On Error GoTo ErrorGeneral
+            End If
+        End If
+
+        If ws Is Nothing And wsOrigen Is Nothing Then
+            aviso = aviso & vbCrLf & curso & ": falta pestana en libro principal y no se pudo usar la hoja del informe."
+            GoTo CerrarOrigen
+        End If
+
+        paso = "Pegar tabla: " & curso
+        Set t = Nothing
+        detalle = ""
+        If Not ws Is Nothing Then
+            Set t = MT_PegarTablaSegura(ws.Range(rangoKPI), sl, detalle)
+        Else
+            Set t = MT_PegarTablaSegura(wsOrigen.Range(rangoOrigen), sl, detalle)
+            aviso = aviso & vbCrLf & curso & ": KPI cargado desde informe origen; sin historial local."
+        End If
+        If t Is Nothing Then
+            aviso = aviso & vbCrLf & curso & ": tabla no pegada tras reintentos: " & detalle
+            GoTo CerrarOrigen
+        End If
+
+        ' Distribucion dinamica: encabezado hasta 1.05", contenido hasta 6.75".
+        ' Las EHS contienen tablas mas altas, por ello se ajustan por separado.
+        areaTop = 1.17 * INCH
+        areaBottom = H - 0.65 * INCH
+        anchoMax = W - 1.0 * INCH
+        If esEHS Then
+            altoTabla = 3.1 * INCH
+        Else
+            altoTabla = 1.72 * INCH
+        End If
+        MT_Encajar t, anchoMax, altoTabla
+        t.Left = (W - t.Width) / 2
+        t.Top = areaTop
+
+        ' Buscar grafico por nombre. En Quality Essentials, aceptar un grafico
+        ' con titulo Quality Essentials aunque tenga nombre antiguo de Aviation.
+        detalle = ""
+        If Not ws Is Nothing Then
+            For Each co In ws.ChartObjects
+                detalle = detalle & " [" & co.Name & "]"
+                If StrComp(Trim$(co.Name), nombreGrafico, vbTextCompare) = 0 Then
+                    Set coElegido = co
+                    Exit For
+                End If
+            Next co
+            ' En OnBoarding el nombre real del grafico incluye Aviation Safety.
+            If coElegido Is Nothing And StrComp(curso, "OnBoarding", vbTextCompare) = 0 Then
+                For Each co In ws.ChartObjects
+                    If InStr(1, co.Name, "OnBoarding", vbTextCompare) > 0 Then
+                        Set coElegido = co
+                        Exit For
+                    End If
+                    On Error Resume Next
+                    If co.Chart.HasTitle Then
+                        If InStr(1, co.Chart.ChartTitle.Text, "OnBoarding", vbTextCompare) > 0 Then
+                            Set coElegido = co
+                        End If
+                    End If
+                    On Error GoTo ErrorGeneral
+                    If Not coElegido Is Nothing Then Exit For
+                Next co
+            End If
+            If coElegido Is Nothing And InStr(1, curso, "Quality Essentials", vbTextCompare) > 0 Then
+                For Each co In ws.ChartObjects
+                    On Error Resume Next
+                    If co.Chart.HasTitle Then
+                        If InStr(1, co.Chart.ChartTitle.Text, "Quality Essentials", vbTextCompare) > 0 Then
+                            Set coElegido = co
+                        End If
+                    End If
+                    On Error GoTo ErrorGeneral
+                    If Not coElegido Is Nothing Then Exit For
+                Next co
+            End If
+        End If
+
+        If Not coElegido Is Nothing Then
+            paso = "Pegar grafico: " & curso
+            Set g = Nothing
+            detalle = ""
+            Set g = MT_InsertarGraficoSeguro(coElegido, sl, detalle)
+            If g Is Nothing Then
+                aviso = aviso & vbCrLf & curso & ": error al insertar grafico: " & detalle
+            Else
+                disponible = areaBottom - (t.Top + t.Height) - 0.22 * INCH
+                If disponible > 0.5 * INCH Then
+                    MT_Encajar g, W - 2 * INCH, disponible
+                    g.Top = t.Top + t.Height + 0.22 * INCH
+                    g.Left = (W - g.Width) / 2
+                    If g.Left + g.Width > W - 1.3 * INCH Then
+                        g.Width = W - 2.6 * INCH
+                        g.Left = 0.55 * INCH
+                    End If
+                Else
+                    g.Delete
+                    Set g = Nothing
+                    aviso = aviso & vbCrLf & curso & ": grafico sin espacio suficiente."
+                End If
+            End If
+        ElseIf Len(nombreGrafico) > 0 And Not esEHS Then
+            aviso = aviso & vbCrLf & curso & ": grafico " & nombreGrafico & " no disponible. Graficos:" & detalle
+        End If
+
+        ' El OLE queda ARRIBA a la derecha de la zona inferior: no sobre el grafico.
+        ' PowerPoint suele ignorar las coordenadas iniciales de AddOLEObject:
+        ' es imprescindible reposicionarlo DESPUES de crearlo.
+        If Len(ruta) > 0 Then
+            If Len(Dir(ruta)) > 0 Then
+                paso = "Insertar icono: " & curso
+                On Error Resume Next
+                Err.Clear
+                Set icono = sl.Shapes.AddOLEObject( _
+                    Left:=W - 1.1 * INCH, Top:=H - 1.55 * INCH, _
+                    Width:=0.56 * INCH, Height:=0.56 * INCH, _
+                    Filename:=ruta, DisplayAsIcon:=msoTrue, IconLabel:=curso)
+                valErr = Err.Number: txtErr = Err.Description
+                On Error GoTo ErrorGeneral
+                If valErr = 0 And Not icono Is Nothing Then
+                    With icono
+                        .LockAspectRatio = msoFalse
+                        .Width = 0.56 * INCH
+                        .Height = 0.56 * INCH
+                        .Left = W - 1.12 * INCH
+                        .Top = H - 1.63 * INCH
+                    End With
+                Else
+                    aviso = aviso & vbCrLf & curso & ": icono no insertado: " & txtErr
+                End If
+            Else
+                aviso = aviso & vbCrLf & curso & ": ruta del archivo no accesible para OLE."
+            End If
+        End If
+
+        ' En FOD se muestra el aviso de anexo y se preserva la diapositiva 10 de la plantilla.
+        If StrComp(curso, "FOD", vbTextCompare) = 0 Then
+            MT_AgregarAvisoFOD sl, W, H
+        End If
+CerrarOrigen:
+        If Not libroOrigen Is Nothing Then libroOrigen.Close SaveChanges:=False
+        Set libroOrigen = Nothing
+SiguienteCurso:
+    Next i
+
+    paso = "Guardar presentacion"
+    carpetaSalida = ThisWorkbook.Path & "\Presentaciones\"
+    If Len(Dir(carpetaSalida, vbDirectory)) = 0 Then MkDir carpetaSalida
+    baseNombre = "Mandatory Training status " & Format(Date, "mmm.dd.yyyy")
+    archivoSalida = carpetaSalida & baseNombre & ".pptx"
+    cuenta = 0
+    Do While Len(Dir(archivoSalida)) > 0
+        cuenta = cuenta + 1
+        archivoSalida = carpetaSalida & baseNombre & " (" & cuenta & ").pptx"
+    Loop
+    ppt.SaveAs archivoSalida
+    Application.CutCopyMode = False
+    Application.ScreenUpdating = screenAnterior
+    Application.EnableEvents = eventosAnterior
+    Application.DisplayAlerts = alertasAnteriores
+    Application.Calculation = calculoAnterior
+    On Error Resume Next
+    CargaForm.Hide
+    On Error GoTo 0
+    If Len(aviso) > 0 Then
+        MsgBox "PPT guardado:" & vbCrLf & archivoSalida & vbCrLf & vbCrLf & _
+               "Comprobar estos detalles:" & Left$(aviso, 2800), vbExclamation
+    Else
+        MsgBox "PPT generado y guardado:" & vbCrLf & archivoSalida, vbInformation
+    End If
+    Exit Sub
+ErrorGeneral:
+    valErr = Err.Number: txtErr = Err.Description
+    On Error Resume Next
+    If Not libroOrigen Is Nothing Then libroOrigen.Close SaveChanges:=False
+    Application.CutCopyMode = False
+    Application.ScreenUpdating = screenAnterior
+    Application.EnableEvents = eventosAnterior
+    Application.DisplayAlerts = alertasAnteriores
+    Application.Calculation = calculoAnterior
+    CargaForm.Hide
+    On Error GoTo 0
+    MsgBox "Error en GENERAR_POWERPOINT / " & curso & " / " & paso & vbCrLf & _
+           CStr(valErr) & " - " & txtErr, vbCritical
+End Sub
