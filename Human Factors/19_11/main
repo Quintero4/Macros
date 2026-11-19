@@ -1,0 +1,366 @@
+Option Explicit
+
+Public Sub GenerarInformeHumanFactors(Optional ByVal rutaCarpetaWbFicheroHumanFactors As String)
+    Dim wb As Workbook, wsInforme As Worksheet, wsListado As Worksheet
+    Dim lastRowInforme As Long, lastRowListado As Long
+    Dim pathFolder As String, pathFolder2 As String, pathFolderCV As String, filePattern As String, fullPath As String
+    Dim wbSrc As Workbook, wsSrc As Worksheet
+    Dim userHdrCol As Long, lastRowSrc As Long
+    Dim usersArr As Variant
+    Dim r As Long
+    Dim dictFirstRow As Object, dictRows As Object
+    Dim key As String, gLookupValue As String
+    Dim wasCalc As XlCalculation
+    Dim wasScreenUpdating As Boolean, wasEvents As Boolean
+   
+    ' Nuevas variables para segunda parte (Curriculum_HumanFactors) y exportación
+    Dim wbSrc2 As Workbook, wsSrc2 As Worksheet
+    Dim fullPath2 As String, lastRowSrc2 As Long
+    Dim dictCurriculum As Object
+    Dim savePath As String, baseName As String, uniqueFullPath As String
+    Dim newWb As Workbook
+   
+    'On Error GoTo ErrHandler
+   
+    Set wb = ThisWorkbook
+    Set wsInforme = wb.Worksheets("Informe Human Factors")
+    Set wsListado = wb.Worksheets("Listado")
+   
+    wasScreenUpdating = Application.ScreenUpdating
+    wasEvents = Application.EnableEvents
+    wasCalc = Application.Calculation
+   
+    Application.ScreenUpdating = False
+    Application.EnableEvents = False
+    Application.Calculation = xlCalculationManual
+   
+    ' 1) Limpiar datos existentes A:H desde fila 3 hasta última fila con datos en C
+    lastRowInforme = wsInforme.Cells(wsInforme.Rows.Count, "C").End(xlUp).Row
+    If lastRowInforme < 3 Then lastRowInforme = 3
+    wsInforme.Range("A3:H" & lastRowInforme).ClearContents
+    wsInforme.Range("A3:H" & lastRowInforme).Font.Color = vbBlack
+   
+    ' 2) Rellenar Columna C (Usuario) desde Listado!A
+    lastRowListado = wsListado.Cells(wsListado.Rows.Count, "A").End(xlUp).Row
+    If lastRowListado >= 1 Then
+        usersArr = wsListado.Range("A1:A" & lastRowListado).Value
+        wsInforme.Range("C3").Resize(UBound(usersArr, 1), 1).Value = usersArr
+        lastRowInforme = 2 + UBound(usersArr, 1)
+    Else
+        lastRowInforme = 2
+    End If
+   
+    ' 3) Abrir archivos input
+    pathFolder = "\\Spi60001.eadscasa.casa.corp\a400m san pablo\Lean_Manufacturing\10.- PCM\28. PCM\1.1.7 Macro Unificar All Learning\Output\"
+    pathFolderCV = "\\Spi60001.eadscasa.casa.corp\a400m san pablo\Lean_Manufacturing\10.- PCM\28. PCM\0. Plan de Formación\ACTUAL YEAR\14 - Human Factors\Input\"
+    filePattern = "My Team All Learning_*.xlsx"
+    fullPath = FindMostRecentFile(pathFolder, filePattern)
+    If Len(fullPath) = 0 Then
+        MsgBox "No se encontró un archivo que coincida con: " & filePattern, vbExclamation
+        GoTo AfterSources
+    End If
+   
+    Set wbSrc = Workbooks.Open(fileName:=fullPath, ReadOnly:=True)
+    Set wsSrc = DetectSourceSheet(wbSrc, "User - User ID")
+    If wsSrc Is Nothing Then Set wsSrc = wbSrc.Worksheets(1)
+   
+    ' 4) Localizar columna "User - User ID" en la hoja origen
+    userHdrCol = FindHeaderColumn(wsSrc, "User - User ID")
+    If userHdrCol = 0 Then
+        MsgBox "No se encontró la columna 'User - User ID' en el archivo origen 'Ataque armado'.", vbExclamation
+        GoTo CloseFirst
+    End If
+   
+    lastRowSrc = wsSrc.Cells(wsSrc.Rows.Count, userHdrCol).End(xlUp).Row
+   
+    ' 5) Construir índices por usuario
+    Set dictFirstRow = CreateObject("Scripting.Dictionary")
+    Set dictRows = CreateObject("Scripting.Dictionary")
+   
+    Dim rr As Long, k As String
+    For rr = 2 To lastRowSrc
+        k = Trim$(CStr(wsSrc.Cells(rr, userHdrCol).Value))
+        If Len(k) > 0 Then
+            If Not dictFirstRow.Exists(k) Then dictFirstRow.Add k, rr
+            If Not dictRows.Exists(k) Then dictRows.Add k, New Collection
+            dictRows(k).Add rr
+        End If
+    Next rr
+   
+    ' 6) Valor de búsqueda en G1 (no G2)
+    gLookupValue = Trim$(CStr(wsInforme.Range("F1").Value))
+   
+    ' 7) Rellenar columnas A, B, D (extraído tras "\") y E; calcular estado en G
+    For r = 3 To lastRowInforme
+        key = Trim$(CStr(wsInforme.Cells(r, "C").Value))
+        If Len(key) = 0 Then
+            wsInforme.Cells(r, "G").Value = "Pending"
+            wsInforme.Cells(r, "G").Font.Color = vbRed
+        Else
+            If dictFirstRow.Exists(key) Then
+                Dim srcRow As Long
+                Dim rawS As String, extractedS As String
+               
+                srcRow = dictFirstRow(key)
+                ' A y B desde columnas A(1) y B(2) del origen
+                wsInforme.Cells(r, "A").Value = wsSrc.Cells(srcRow, 1).Value
+                wsInforme.Cells(r, "B").Value = wsSrc.Cells(srcRow, 2).Value
+               
+                ' D: Extraer texto después del último "\"
+                rawS = CStr(wsSrc.Cells(srcRow, 18).Value) ' Columna S
+                extractedS = ExtractAfterLastBackslash(rawS)
+                wsInforme.Cells(r, "D").Value = extractedS
+               
+                ' E desde U (21) del origen
+                wsInforme.Cells(r, "E").Value = wsSrc.Cells(srcRow, 20).Value
+            End If
+        End If
+    Next r
+   
+CloseFirst:
+    If Not wbSrc Is Nothing Then
+        wbSrc.Close SaveChanges:=False
+        Set wbSrc = Nothing
+    End If
+
+    ' === Segunda parte: completar Columna F y G con "Curriculum_ HumanFactors*.xlsx" ===
+    filePattern = "Curriculum*.xlsx"
+    fullPath2 = FindMostRecentFile(pathFolderCV, filePattern)
+    If Len(fullPath2) = 0 Then
+        MsgBox "No se encontró un archivo que coincida con: " & filePattern, vbExclamation
+        GoTo AfterSources
+    End If
+   
+    Set wbSrc2 = Workbooks.Open(fileName:=fullPath2, ReadOnly:=True)
+    Set wsSrc2 = wbSrc2.Worksheets(1) ' Se asume col C=Usuario y col G=Estado
+   
+    lastRowSrc2 = wsSrc2.Cells(wsSrc2.Rows.Count, "C").End(xlUp).Row
+    Set dictCurriculum = CreateObject("Scripting.Dictionary")
+   
+    Dim u As String, status As String
+    Dim fecha As Variant, vPrevFecha As Variant
+    
+    For rr = 2 To lastRowSrc2
+        u = Trim$(CStr(wsSrc2.Cells(rr, "C").Value))
+        
+        If Len(u) <> 0 Then
+            status = CStr(wsSrc2.Cells(rr, "G").Value)
+            fecha = wsSrc2.Cells(rr, "AS").Value
+            
+            ' Si la celda no contiene una fecha válida, le asignamos un valor mínimo por defecto
+            If Not IsDate(fecha) Then
+                fecha = DateSerial(1900, 1, 1)
+            Else
+                fecha = CDate(fecha)
+            End If
+    
+            ' Si el usuario ya tiene un registro, actualizar...
+            If dictCurriculum.Exists(u) Then
+                Dim arrPrev() As Variant
+                arrPrev = dictCurriculum(u) ' arrPrev(0)=status, arrPrev(1)=fecha
+        
+                ' Evaluar el nuevo estado
+                Dim newStatus As Boolean
+                newStatus = (InStr(1, status, "Completed", vbTextCompare) > 0) Or arrPrev(0)
+        
+                ' Mantener la fecha más reciente
+                Dim newFecha As Date
+                vPrevFecha = arrPrev(1)
+                
+                If fecha > vPrevFecha Then
+                    newFecha = fecha
+                Else
+                    newFecha = vPrevFecha
+                End If
+        
+                dictCurriculum(u) = Array(newStatus, newFecha)
+        
+            Else
+                ' Primer registro del usuario
+                dictCurriculum(u) = Array( _
+                    InStr(1, status, "Completed", vbTextCompare) > 0, _
+                    fecha)
+            End If
+        End If
+    Next rr
+
+    ' Asignar Columna F y G en Informe
+    For r = 3 To lastRowInforme
+        key = Trim$(CStr(wsInforme.Cells(r, "C").Value))
+        
+        If Len(key) = 0 Then
+            wsInforme.Cells(r, "F").Value = "Pending"
+            wsInforme.Cells(r, "F").Font.Color = vbRed
+            
+        ElseIf dictCurriculum.Exists(key) Then
+            ' dictCurriculum(key)(0) contiene el Boolean, dictCurriculum(key)(1) contiene la Fecha
+            If dictCurriculum(key)(0) = True Then
+                Dim fechaCompletado As Date
+                fechaCompletado = dictCurriculum(key)(1)
+                
+                wsInforme.Cells(r, "G").Value = fechaCompletado ' Escribimos la fecha en la columna G
+                
+                ' COMPARACIÓN DE DOS AÑOS:
+                ' Si la fecha de completado es menor que la fecha actual menos 2 años, está caducado (Lapsed)
+                If fechaCompletado < DateAdd("yyyy", -2, Date) Then
+                    wsInforme.Cells(r, "F").Value = "Completed (Caducado)"
+                    wsInforme.Cells(r, "F").Font.Color = RGB(255, 165, 0)
+                    wsInforme.Cells(r, "G").Font.Color = vbBlack
+                Else
+                    wsInforme.Cells(r, "F").Value = "Completed"
+                    wsInforme.Cells(r, "F").Font.Color = vbGreen
+                    wsInforme.Cells(r, "G").Font.Color = vbBlack
+                End If
+            Else
+                wsInforme.Cells(r, "F").Value = "Pending"
+                wsInforme.Cells(r, "F").Font.Color = vbRed
+            End If
+            
+        Else
+            wsInforme.Cells(r, "F").Value = "Pending"
+            wsInforme.Cells(r, "F").Font.Color = vbRed
+        End If
+    Next r
+   
+    If Not wbSrc2 Is Nothing Then
+        wbSrc2.Close SaveChanges:=False
+        Set wbSrc2 = Nothing
+    End If
+
+AfterSources:
+    ' === Exportar copias de pestañas a nuevo libro ===
+    pathFolder2 = "\\Spi60001.eadscasa.casa.corp\a400m san pablo\Lean_Manufacturing\10.- PCM\28. PCM\0. Plan de Formación\ACTUAL YEAR\14 - Human Factors\Informes\"
+    savePath = pathFolder2
+    baseName = "TAOA Human Factors Training " & EnglishMonthAbbrev(Month(Date)) & "." & Format(Date, "d") & "." & Format(Date, "yyyy") & ".xlsx"
+    uniqueFullPath = EnsureUniquePath(savePath, baseName)
+   
+    Set newWb = Workbooks.Add(xlWBATWorksheet)
+    ' Copiar hojas
+    wb.Worksheets("Resumen Human Factors").Copy After:=newWb.Sheets(newWb.Sheets.Count)
+    wb.Worksheets("Informe Human Factors").Copy After:=newWb.Sheets(newWb.Sheets.Count)
+    ' Eliminar hoja en blanco inicial
+    Application.DisplayAlerts = False
+    If newWb.Sheets.Count > 0 Then newWb.Sheets(1).Delete
+    Application.DisplayAlerts = True
+   
+    newWb.SaveAs fileName:=uniqueFullPath, FileFormat:=xlOpenXMLWorkbook
+
+SafeExit:
+    Application.Calculation = wasCalc
+    Application.EnableEvents = wasEvents
+    Application.ScreenUpdating = wasScreenUpdating
+    Exit Sub
+
+ErrHandler:
+    MsgBox "Error en GenerarInformeHumanFactors: " & Err.Number & " - " & Err.description, vbCritical
+     On Error Resume Next
+    If Not wbSrc Is Nothing Then wbSrc.Close SaveChanges:=False
+    If Not wbSrc2 Is Nothing Then wbSrc2.Close SaveChanges:=False
+    If Not newWb Is Nothing Then newWb.Close SaveChanges:=False
+    On Error GoTo 0
+    Resume SafeExit
+End Sub
+
+' --- Helpers ---
+
+Private Function FindMostRecentFile(ByVal folderPath As String, ByVal pattern As String) As String
+    Dim fso As Object, fldr As Object, f As Object
+    Dim mostRecent As Date, resultPath As String
+   
+    On Error GoTo ExitPoint
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    Set fldr = fso.GetFolder(folderPath)
+   
+    mostRecent = #1/1/1900#
+    resultPath = ""
+   
+    For Each f In fldr.Files
+        If (fso.GetFileName(f.Path) Like pattern) Then
+            If f.DateLastModified > mostRecent Then
+                mostRecent = f.DateLastModified
+                resultPath = f.Path
+            End If
+        End If
+    Next f
+   
+ExitPoint:
+    FindMostRecentFile = resultPath
+End Function
+
+Private Function FindHeaderColumn(ByVal ws As Worksheet, ByVal headerText As String) As Long
+    Dim lastCol As Long, c As Long
+    lastCol = ws.Cells(1, ws.Columns.Count).End(xlToLeft).Column
+    For c = 1 To lastCol
+        If StrComp(Trim$(CStr(ws.Cells(1, c).Value)), headerText, vbTextCompare) = 0 Then
+            FindHeaderColumn = c
+            Exit Function
+        End If
+    Next c
+    FindHeaderColumn = 0
+End Function
+
+Private Function DetectSourceSheet(ByVal wb As Workbook, ByVal headerText As String) As Worksheet
+    Dim sh As Worksheet, colIdx As Long
+    For Each sh In wb.Worksheets
+        colIdx = FindHeaderColumn(sh, headerText)
+        If colIdx > 0 Then
+            Set DetectSourceSheet = sh
+            Exit Function
+        End If
+    Next sh
+    Set DetectSourceSheet = Nothing
+End Function
+
+Private Function ExtractAfterLastBackslash(ByVal s As String) As String
+    Dim p As Long
+    p = InStrRev(s, "\")
+    If p > 0 Then
+        ExtractAfterLastBackslash = Trim$(Mid$(s, p + 1))
+    Else
+        ExtractAfterLastBackslash = Trim$(s)
+    End If
+End Function
+
+Private Function EnglishMonthAbbrev(m As Integer) As String
+    Select Case m
+        Case 1: EnglishMonthAbbrev = "Jan"
+        Case 2: EnglishMonthAbbrev = "Feb"
+        Case 3: EnglishMonthAbbrev = "Mar"
+        Case 4: EnglishMonthAbbrev = "Apr"
+        Case 5: EnglishMonthAbbrev = "May"
+        Case 6: EnglishMonthAbbrev = "Jun"
+        Case 7: EnglishMonthAbbrev = "Jul"
+        Case 8: EnglishMonthAbbrev = "Aug"
+        Case 9: EnglishMonthAbbrev = "Sep"
+        Case 10: EnglishMonthAbbrev = "Oct"
+        Case 11: EnglishMonthAbbrev = "Nov"
+        Case 12: EnglishMonthAbbrev = "Dec"
+        Case Else: EnglishMonthAbbrev = Format(Date, "mmm")
+    End Select
+End Function
+
+Private Function EnsureUniquePath(ByVal folderPath2 As String, ByVal fileName As String) As String
+    Dim fso As Object
+    Dim baseName As String, ext As String
+    Dim tryPath As String
+    Dim n As Long
+   
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    baseName = Left$(fileName, InStrRev(fileName, ".") - 1)
+    ext = Mid$(fileName, InStrRev(fileName, "."))
+   
+    tryPath = folderPath2
+    If Right$(tryPath, 1) <> "\" Then tryPath = tryPath & "\"
+    tryPath = tryPath & fileName
+   
+    n = 1
+    Do While fso.FileExists(tryPath)
+        tryPath = folderPath2
+        If Right$(tryPath, 1) <> "\" Then tryPath = tryPath & "\"
+        tryPath = tryPath & baseName & " (" & n & ")" & ext
+        n = n + 1
+    Loop
+   
+    EnsureUniquePath = tryPath
+End Function
+
