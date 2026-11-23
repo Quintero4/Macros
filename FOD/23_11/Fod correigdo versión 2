@@ -391,6 +391,7 @@ NextIteration:
     hojaTemporal.Delete
     Application.DisplayAlerts = alertasAnteriores
     With informeWB.Worksheets("Informe FOD")
+        MostrarFilasExportadasFOD informeWB.Worksheets("Informe FOD"), reportRow - 1
         AsegurarFormatoFechaExportadaFOD .Range("G3:G" & (reportRow - 1))
         AsegurarRojoCaducadoFOD .Range("H3:H" & (reportRow - 1))
         AsegurarFormatoFechaExportadaFOD .Range("I3:I" & (reportRow - 1))
@@ -512,6 +513,26 @@ Private Function EsEncabezadoFinalizacionFOD(ByVal valor As Variant) As Boolean
             EsEncabezadoFinalizacionFOD = True
     End Select
 End Function
+
+Private Sub MostrarFilasExportadasFOD(ByVal hoja As Worksheet, ByVal ultimaFila As Long)
+    Dim tabla As ListObject
+    Dim filtroTabla As AutoFilter
+    Dim filasInforme As Range
+
+    Set filasInforme = hoja.Range("A3:J" & ultimaFila)
+    For Each tabla In hoja.ListObjects
+        If Not Application.Intersect(tabla.Range, filasInforme) Is Nothing Then
+            Set filtroTabla = tabla.AutoFilter
+            If Not filtroTabla Is Nothing Then
+                If filtroTabla.FilterMode Then filtroTabla.ShowAllData
+            End If
+        End If
+    Next tabla
+
+    ' Quitar criterios heredados de la plantilla en la copia, conservando los desplegables.
+    If hoja.FilterMode Then hoja.ShowAllData
+    filasInforme.EntireRow.Hidden = False
+End Sub
 
 Private Sub AsegurarFormatoFechaExportadaFOD(ByVal celdas As Range)
     Dim reglaFecha As FormatCondition
