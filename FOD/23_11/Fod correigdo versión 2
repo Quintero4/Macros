@@ -216,9 +216,9 @@ Private Sub GenerarInformeFODInterno(ByVal rutaCarpetaWbFicheroFuenteFOD As Stri
         courseName = TextoFOD(datos(fila, 5))
         status = NormalizarEstadoFOD(datos(fila, 6))
         esCursoInicial = IsInCourseList(courseName, fodInitialTrainingCourses)
-        esCursoFOD = esCursoInicial Or (InStr(1, courseName, "FOD", vbTextCompare) > 0)
+        esCursoFOD = (InStr(1, courseName, "FOD", vbTextCompare) > 0)
 
-        If Not esCursoFOD Then
+        If Not (esCursoInicial Or esCursoFOD) Then
             Select Case status
                 Case "Registered", "Completed", "Exempt", "Completed (Equivalent)"
                     ' Estos estados ya incluían al empleado en la población general.
@@ -251,7 +251,7 @@ Private Sub GenerarInformeFODInterno(ByVal rutaCarpetaWbFicheroFuenteFOD As Stri
             Set personaData = personas(personaKey)
         End If
 
-        If Not esCursoFOD Then GoTo NextIteration
+        If Not (esCursoInicial Or esCursoFOD) Then GoTo NextIteration
 
         ' Para el FOD reciente, la fecha de realización viene siempre de H.
         fechaFODReciente = LeerFechaOrigenFOD(wsData.Cells(i, "H"), datos(fila, 8), origen1904)
@@ -310,12 +310,14 @@ Private Sub GenerarInformeFODInterno(ByVal rutaCarpetaWbFicheroFuenteFOD As Stri
             End If
         End If
 
-        If EsMejorCursoRecienteFOD(courseName, status, fechaFODReciente, segundosFODReciente, personaData) Then
-            personaData("CursoRecienteNombre") = courseName
-            personaData("CursoRecienteEstado") = status
-            personaData("CursoRecienteFecha") = fechaFODReciente
-            personaData("CursoRecienteSegundos") = segundosFODReciente
-            If personID = idDiagnostico Then filaRecienteDiagnostico = i
+        If esCursoFOD Then
+            If EsMejorCursoRecienteFOD(fechaFODReciente, segundosFODReciente, personaData) Then
+                personaData("CursoRecienteNombre") = courseName
+                personaData("CursoRecienteEstado") = status
+                personaData("CursoRecienteFecha") = fechaFODReciente
+                personaData("CursoRecienteSegundos") = segundosFODReciente
+                If personID = idDiagnostico Then filaRecienteDiagnostico = i
+            End If
         End If
 NextIteration:
     Next i
@@ -758,17 +760,11 @@ Private Function EsMejorRegistroFOD(ByVal estado As String, ByVal fechaOrden As 
     End If
 End Function
 
-Private Function EsMejorCursoRecienteFOD(ByVal nombre As String, ByVal estado As String, _
-                                          ByVal fecha As Long, ByVal segundos As Long, _
+Private Function EsMejorCursoRecienteFOD(ByVal fecha As Long, ByVal segundos As Long, _
                                           ByVal persona As Object) As Boolean
     Dim fechaAnterior As Long
-    Dim segundosAnteriores As Long
-    Dim estadoAnterior As String
-    Dim esObsoleto As Boolean
-    Dim anteriorObsoleto As Boolean
 
-    estadoAnterior = persona("CursoRecienteEstado")
-    If Len(estadoAnterior) = 0 Then
+    If Len(persona("CursoRecienteNombre")) = 0 Then
         EsMejorCursoRecienteFOD = True
         Exit Function
     End If
@@ -779,29 +775,8 @@ Private Function EsMejorCursoRecienteFOD(ByVal nombre As String, ByVal estado As
         Exit Function
     End If
 
-    ' Dos filas del mismo día pueden ser el curso real y su copia obsoleta.
-    ' Dar prioridad al curso no obsoleto aunque la copia tenga hora y el real no.
-    esObsoleto = EsCursoObsoletoFOD(nombre)
-    anteriorObsoleto = EsCursoObsoletoFOD(persona("CursoRecienteNombre"))
-    If esObsoleto <> anteriorObsoleto Then
-        EsMejorCursoRecienteFOD = Not esObsoleto
-        Exit Function
-    End If
-
-    segundosAnteriores = persona("CursoRecienteSegundos")
-    If segundos <> segundosAnteriores Then
-        EsMejorCursoRecienteFOD = (segundos > segundosAnteriores)
-    ElseIf (estado = "Completed") <> (estadoAnterior = "Completed") Then
-        EsMejorCursoRecienteFOD = (estado = "Completed")
-    Else
-        EsMejorCursoRecienteFOD = (PrioridadEmpateFOD(estado) > PrioridadEmpateFOD(estadoAnterior))
-    End If
-End Function
-
-Private Function EsCursoObsoletoFOD(ByVal nombre As String) As Boolean
-    Select Case UCase$(Left$(nombre, 8))
-        Case "OBSOLETE", "OBSOLETO": EsCursoObsoletoFOD = True
-    End Select
+    ' Si coinciden fecha y hora, conservar la primera fila del origen.
+    EsMejorCursoRecienteFOD = (segundos > CLng(persona("CursoRecienteSegundos")))
 End Function
 
 Private Function EstadoConCaducidadFOD(ByVal estado As String, ByVal fechaCurso As Long, _
