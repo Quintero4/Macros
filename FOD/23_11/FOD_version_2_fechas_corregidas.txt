@@ -67,7 +67,7 @@ Private Function LeerFechaFOD(ByVal celda As Range, ByVal ajusteOrigen As Long, 
             textoOrigen = CStr(valor)
             fecha = ParseFechaSinLocale(textoOrigen)
             If VarType(fecha) = vbDate Then
-                textoFecha = textoOrigen
+                textoFecha = TextoDiaFOD(fecha)
                 LeerFechaFOD = fecha
                 Exit Function
             End If
@@ -77,7 +77,7 @@ Private Function LeerFechaFOD(ByVal celda As Range, ByVal ajusteOrigen As Long, 
             textoOrigen = CStr(celda.Text)
             fecha = ParseFechaSinLocale(textoOrigen)
             If VarType(fecha) = vbDate Then
-                textoFecha = textoOrigen
+                textoFecha = TextoDiaFOD(fecha)
                 LeerFechaFOD = fecha
                 Exit Function
             End If
@@ -94,16 +94,57 @@ Private Function LeerFechaFOD(ByVal celda As Range, ByVal ajusteOrigen As Long, 
     If serie < 60 Then serie = serie + 1
     fecha = CDate(serie)
 
-    If Len(textoOrigen) > 0 And InStr(textoOrigen, "#") = 0 _
-       And VarType(celda.Value) = vbDate Then
-        textoFecha = textoOrigen
-    Else
-        ' Si se ven almohadillas o un número de serie, reconstruir solo la presentación.
-        textoFecha = Right$("0" & Day(fecha), 2) & "/" & _
-                     Right$("0" & Month(fecha), 2) & "/" & Right$("0000" & Year(fecha), 4)
-    End If
+    textoFecha = TextoDiaFOD(fecha)
     LeerFechaFOD = fecha
 SerieInvalida:
+End Function
+
+Private Function TextoDiaFOD(ByVal fecha As Date) As String
+    TextoDiaFOD = Right$("0" & Day(fecha), 2) & "/" & _
+                 Right$("0" & Month(fecha), 2) & "/" & Right$("0000" & Year(fecha), 4)
+End Function
+
+Private Sub BuscarColumnasFechaFOD(ByVal hoja As Worksheet, ByRef colFinalizacion As Long, _
+                                  ByRef colCambioEstado As Long)
+    Dim ultimaColumna As Long
+    Dim columna As Long
+    Dim encabezado As Variant
+
+    ultimaColumna = hoja.Cells(1, hoja.Columns.Count).End(xlToLeft).Column
+    For columna = 1 To ultimaColumna
+        encabezado = hoja.Cells(1, columna).Value2
+        If VarType(encabezado) = vbString Then
+            Select Case LCase$(Trim$(Replace(CStr(encabezado), ChrW(160), " ")))
+                Case "training record - training record completed date"
+                    If colFinalizacion = 0 Then colFinalizacion = columna
+                Case "training record - last training record status change date"
+                    If colCambioEstado = 0 Then colCambioEstado = columna
+            End Select
+        End If
+        If colFinalizacion > 0 And colCambioEstado > 0 Then Exit For
+    Next columna
+End Sub
+
+Private Function LeerFechaCursoFOD(ByVal hoja As Worksheet, ByVal fila As Long, _
+                                   ByVal estado As String, ByVal ajusteOrigen As Long, _
+                                   ByVal colFinalizacion As Long, ByVal colCambioEstado As Long, _
+                                   ByRef textoFecha As String) As Variant
+    Dim fecha As Variant
+
+    If estado = "Completed" Or estado = "Completed (Equivalent)" Then
+        If colFinalizacion > 0 Then
+            fecha = LeerFechaFOD(hoja.Cells(fila, colFinalizacion), ajusteOrigen, textoFecha)
+        End If
+        If IsEmpty(fecha) And colCambioEstado > 0 Then
+            fecha = LeerFechaFOD(hoja.Cells(fila, colCambioEstado), ajusteOrigen, textoFecha)
+        End If
+    End If
+
+    ' Compatibilidad con otras exportaciones y con los cursos sin finalizar.
+    If IsEmpty(fecha) Then fecha = LeerFechaFOD(hoja.Cells(fila, "K"), ajusteOrigen, textoFecha)
+    If IsEmpty(fecha) Then fecha = LeerFechaFOD(hoja.Cells(fila, "J"), ajusteOrigen, textoFecha)
+    If IsEmpty(fecha) Then fecha = LeerFechaFOD(hoja.Cells(fila, "H"), ajusteOrigen, textoFecha)
+    LeerFechaCursoFOD = fecha
 End Function
 
 Private Function SerieFechaFOD(ByVal fecha As Date, ByVal ajusteInforme As Long) As Double
@@ -139,6 +180,8 @@ Sub GenerarInformeFOD(Optional ByVal rutaCarpetaWbFicheroFuenteFOD As String)
     Dim courseName As String
     Dim status As String
     Dim ajusteOrigen As Long
+    Dim colFechaFinalizacion As Long
+    Dim colFechaCambioEstado As Long
     Dim ajusteInforme As Long
     Dim cursoFecha As Variant
     Dim cursoFechaTexto As String
@@ -216,6 +259,7 @@ Sub GenerarInformeFOD(Optional ByVal rutaCarpetaWbFicheroFuenteFOD As String)
     Set wbData = Application.Run("'LibreriaModulosConFuncionesReutilizables.xlsm'!OpenExcelWorkbook", myTeamAllLearningFileFullPath)
     Set wsData = wbData.Sheets("My Team All Learning")
     If wbData.Date1904 Then ajusteOrigen = 1462
+    BuscarColumnasFechaFOD wsData, colFechaFinalizacion, colFechaCambioEstado
 
     If wsData.AutoFilterMode Then wsData.AutoFilterMode = False
 
@@ -348,9 +392,8 @@ Sub GenerarInformeFOD(Optional ByVal rutaCarpetaWbFicheroFuenteFOD As String)
 
             courseName = CStr(wsData.Cells(i, "E").Value)
 
-            cursoFecha = LeerFechaFOD(wsData.Cells(i, "K"), ajusteOrigen, cursoFechaTexto)
-            If IsEmpty(cursoFecha) Then cursoFecha = LeerFechaFOD(wsData.Cells(i, "J"), ajusteOrigen, cursoFechaTexto)
-            If IsEmpty(cursoFecha) Then cursoFecha = LeerFechaFOD(wsData.Cells(i, "H"), ajusteOrigen, cursoFechaTexto)
+            cursoFecha = LeerFechaCursoFOD(wsData, i, status, ajusteOrigen, _
+                                           colFechaFinalizacion, colFechaCambioEstado, cursoFechaTexto)
 
             If IsInCourseList(courseName, fodInitialTrainingCourses) And status = "Completed" Then
                 If IsDate(cursoFecha) Then
@@ -572,7 +615,7 @@ NextIteration:
     Set informeWB = ActiveWorkbook
     Set hojaInformeExportado = informeWB.Worksheets(1)
 
-    ' Copiar literalmente las fechas seleccionadas. El formato Texto impide
+    ' Escribir las fechas seleccionadas en día/mes/año. El formato Texto impide
     ' que Excel vuelva a interpretar una cadena como 09/07/2026.
     With hojaInformeExportado.Cells(3, colOffset + 1).Resize(personas.Count, 1)
         .NumberFormat = "@"
