@@ -135,8 +135,8 @@ Private Sub GenerarInformeFODInterno(ByVal rutaCarpetaWbFicheroFuenteFOD As Stri
         GoTo SafeExit
     End If
 
-    ' Leer el libro seleccionado directamente. Value2 conserva tanto el serial
-    ' de Excel como el texto original, sin pasar la fecha por una importación.
+    ' Leer el libro seleccionado directamente. En fechas numéricas ambiguas,
+    ' la presentación de la propia celda decide el orden de día y mes.
     Set wbData = AbrirOrigenFOD(myTeamAllLearningFileFullPath, origenAbiertoPorMacro)
     Set wsData = wbData.Worksheets("My Team All Learning")
     columnaFinalizacion = ColumnaFinalizacionFOD(wsData)
@@ -252,11 +252,16 @@ Private Sub GenerarInformeFODInterno(ByVal rutaCarpetaWbFicheroFuenteFOD As Stri
 
         If Not esCursoFOD Then GoTo NextIteration
 
-        completionDate = ParseFechaSinLocale(datos(fila, columnaFinalizacion), origen1904)
+        completionDate = LeerFechaOrigenFOD(wsData.Cells(i, columnaFinalizacion), _
+                                          datos(fila, columnaFinalizacion), origen1904)
         registrationDate = 0
         otherDate = 0
-        If columnaFinalizacion <> 10 Then registrationDate = ParseFechaSinLocale(datos(fila, 10), origen1904) ' J
-        If columnaFinalizacion <> 8 Then otherDate = ParseFechaSinLocale(datos(fila, 8), origen1904)           ' H
+        If columnaFinalizacion <> 10 Then
+            registrationDate = LeerFechaOrigenFOD(wsData.Cells(i, "J"), datos(fila, 10), origen1904)
+        End If
+        If columnaFinalizacion <> 8 Then
+            otherDate = LeerFechaOrigenFOD(wsData.Cells(i, "H"), datos(fila, 8), origen1904)
+        End If
 
         ' J y H pueden ordenar la fila si falta la fecha de finalización.
         ' Solo la columna identificada de finalización se vuelca para un Completed.
@@ -277,10 +282,10 @@ Private Sub GenerarInformeFODInterno(ByVal rutaCarpetaWbFicheroFuenteFOD As Stri
 
         If personID = idDiagnostico Then
             Debug.Print "Origen fila " & i & " | " & courseName & " | " & status
-            TrazarFechaOrigenFOD wsData.Cells(i, columnaFinalizacion), origen1904
-            If columnaFinalizacion <> 8 Then TrazarFechaOrigenFOD wsData.Cells(i, 8), origen1904
-            If columnaFinalizacion <> 10 Then TrazarFechaOrigenFOD wsData.Cells(i, 10), origen1904
-            If columnaFinalizacion <> 11 Then TrazarFechaOrigenFOD wsData.Cells(i, 11), origen1904
+            TrazarFechaOrigenFOD wsData.Cells(i, columnaFinalizacion), origen1904, True
+            If columnaFinalizacion <> 8 Then TrazarFechaOrigenFOD wsData.Cells(i, 8), origen1904, True
+            If columnaFinalizacion <> 10 Then TrazarFechaOrigenFOD wsData.Cells(i, 10), origen1904, True
+            If columnaFinalizacion <> 11 Then TrazarFechaOrigenFOD wsData.Cells(i, 11), origen1904, True
         End If
 
         ' Guardar los Pending explícitos sin fecha para compararlos con el historial
@@ -385,7 +390,11 @@ NextIteration:
     Application.DisplayAlerts = False
     hojaTemporal.Delete
     Application.DisplayAlerts = alertasAnteriores
-    informeWB.Worksheets("Informe FOD").Calculate
+    With informeWB.Worksheets("Informe FOD")
+        AsegurarFormatoFechaExportadaFOD .Range("G3:G" & (reportRow - 1))
+        AsegurarFormatoFechaExportadaFOD .Range("I3:I" & (reportRow - 1))
+        .Calculate
+    End With
     resumenFODWS.Calculate
 
     ' Conservar carpeta, nombre por fecha y sufijo de duplicados.
@@ -503,11 +512,76 @@ Private Function EsEncabezadoFinalizacionFOD(ByVal valor As Variant) As Boolean
     End Select
 End Function
 
-Private Sub TrazarFechaOrigenFOD(ByVal celda As Range, ByVal sistema1904 As Boolean)
+Private Sub AsegurarFormatoFechaExportadaFOD(ByVal celdas As Range)
+    Dim reglaFecha As FormatCondition
+
+    celdas.NumberFormat = FORMATO_FECHA_FOD
+    If celdas.FormatConditions.Count = 0 Then Exit Sub
+
+    ' Aplicar solo el formato numérico en la copia exportada y dejar que las
+    ' reglas existentes sigan aportando colores y otros estilos.
+    Set reglaFecha = celdas.FormatConditions.Add(Type:=xlExpression, Formula1:="=1=1")
+    reglaFecha.NumberFormat = FORMATO_FECHA_FOD
+    reglaFecha.StopIfTrue = False
+    reglaFecha.SetFirstPriority
+End Sub
+
+Private Function LeerFechaOrigenFOD(ByVal celda As Range, ByVal valor As Variant, _
+                                    ByVal origen1904 As Boolean) As Long
+    Dim serie As Long
+    Dim fechaInterna As Date
+    Dim dia As Long
+    Dim mes As Long
+    Dim serieInvertida As Long
+    Dim textoVisible As String
+    Dim finFecha As Long
+
+    serie = ParseFechaSinLocale(valor, origen1904)
+    LeerFechaOrigenFOD = serie
+    If serie = 0 Or VarType(valor) = vbString Then Exit Function
+
+    fechaInterna = DateAdd("d", serie, #12/30/1899#)
+    dia = Day(fechaInterna)
+    mes = Month(fechaInterna)
+    If dia > 12 Or dia = mes Then Exit Function
+
+    textoVisible = TextoFOD(celda.Text)
+    If Len(textoVisible) > 0 Then
+        If Len(Replace(textoVisible, "#", "")) = 0 Then
+            ' Recuperar la presentación cuando el ancho solo permite ver ####.
+            textoVisible = TextoFOD(TextoFechaSinLimiteDeAnchoFOD(celda, CDbl(valor)))
+        End If
+    End If
+
+    ' La hora que acompaña a la fecha visible no influye en el calendario.
+    finFecha = InStr(textoVisible, " ")
+    If finFecha > 0 Then textoVisible = Left$(textoVisible, finFecha - 1)
+    If InStr(textoVisible, "/") = 0 And InStr(textoVisible, "-") = 0 Then Exit Function
+
+    ' Admitir solo el intercambio exacto de día/mes del mismo año cuando
+    ' la celda de origen lo muestra así. Nunca invertir por ser ambigua.
+    serieInvertida = CLng(CDbl(DateSerial(Year(fechaInterna), dia, mes)))
+    If ParseFechaSinLocale(textoVisible, False) = serieInvertida Then
+        LeerFechaOrigenFOD = serieInvertida
+    End If
+End Function
+
+Private Function TextoFechaSinLimiteDeAnchoFOD(ByVal celda As Range, ByVal valor As Double) As String
+    On Error GoTo SinTexto
+    TextoFechaSinLimiteDeAnchoFOD = Application.WorksheetFunction.Text(valor, celda.DisplayFormat.NumberFormat)
+SinTexto:
+End Function
+
+Private Sub TrazarFechaOrigenFOD(ByVal celda As Range, ByVal sistema1904 As Boolean, _
+                                  Optional ByVal leerComoOrigen As Boolean = False)
     Dim serie As Long
     Dim fechaVerificada As String
 
-    serie = ParseFechaSinLocale(celda.Value2, sistema1904)
+    If leerComoOrigen Then
+        serie = LeerFechaOrigenFOD(celda, celda.Value2, sistema1904)
+    Else
+        serie = ParseFechaSinLocale(celda.Value2, sistema1904)
+    End If
     If serie <> 0 Then fechaVerificada = Format$(DateAdd("d", serie, #12/30/1899#), "yyyy-mm-dd")
     Debug.Print "  " & celda.Address(False, False) & " | visible: " & celda.Text & _
                 " | valor: " & TextoFOD(celda.Value2) & " | fecha ISO: " & fechaVerificada
