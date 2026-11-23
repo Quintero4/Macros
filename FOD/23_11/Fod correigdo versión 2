@@ -78,6 +78,8 @@ Private Sub GenerarInformeFODInterno(ByVal rutaCarpetaWbFicheroFuenteFOD As Stri
     Dim filaRecienteDiagnostico As Long
     Dim filaInformeDiagnostico As Long
     Dim fechaOrden As Long
+    Dim fechaRegistroReciente As Long
+    Dim marcaRegistroReciente As Double
     Dim ultimaFilaInforme As Long
     Dim hojaTemporal As Worksheet
     Dim calculoAnterior As XlCalculation
@@ -142,8 +144,9 @@ Private Sub GenerarInformeFODInterno(ByVal rutaCarpetaWbFicheroFuenteFOD As Stri
     columnaFinalizacion = ColumnaFinalizacionFOD(wsData)
     If Len(idDiagnostico) > 0 Then
         Debug.Print "Archivo FOD: " & wbData.FullName
-        Debug.Print "Columna de finalización: " & wsData.Cells(1, columnaFinalizacion).Address(False, False) & _
+        Debug.Print "Columna de finalización del FOD inicial: " & wsData.Cells(1, columnaFinalizacion).Address(False, False) & _
                     " | " & TextoFOD(wsData.Cells(1, columnaFinalizacion).Value2)
+        Debug.Print "Columna para elegir el FOD más reciente: H | " & TextoFOD(wsData.Cells(1, "H").Value2)
     End If
 
     '-----------------------------------------------------------------------------------
@@ -244,7 +247,7 @@ Private Sub GenerarInformeFODInterno(ByVal rutaCarpetaWbFicheroFuenteFOD As Stri
             personaData("CursoRecienteNombre") = ""
             personaData("CursoRecienteEstado") = ""
             personaData("CursoRecienteFecha") = 0&
-            personaData("CursoRecienteFechaOrden") = 0&
+            personaData("CursoRecienteFechaOrden") = 0#
             personas.Add personaKey, personaData
         Else
             Set personaData = personas(personaKey)
@@ -252,19 +255,29 @@ Private Sub GenerarInformeFODInterno(ByVal rutaCarpetaWbFicheroFuenteFOD As Stri
 
         If Not esCursoFOD Then GoTo NextIteration
 
-        completionDate = LeerFechaOrigenFOD(wsData.Cells(i, columnaFinalizacion), _
-                                          datos(fila, columnaFinalizacion), origen1904)
+        ' El curso reciente se elige por Training Record Complete Date (H)
+        ' para todos los estados. La fecha corregida de H también se exporta.
+        fechaRegistroReciente = LeerFechaOrigenFOD(wsData.Cells(i, "H"), datos(fila, 8), origen1904)
+        marcaRegistroReciente = fechaRegistroReciente
+        If fechaRegistroReciente <> 0 Then
+            marcaRegistroReciente = marcaRegistroReciente + SegundosRegistroFOD(datos(fila, 8)) / 86400#
+        End If
+
+        completionDate = fechaRegistroReciente
+        If columnaFinalizacion <> 8 Then
+            completionDate = LeerFechaOrigenFOD(wsData.Cells(i, columnaFinalizacion), _
+                                                datos(fila, columnaFinalizacion), origen1904)
+        End If
         registrationDate = 0
         otherDate = 0
         If columnaFinalizacion <> 10 Then
             registrationDate = LeerFechaOrigenFOD(wsData.Cells(i, "J"), datos(fila, 10), origen1904)
         End If
         If columnaFinalizacion <> 8 Then
-            otherDate = LeerFechaOrigenFOD(wsData.Cells(i, "H"), datos(fila, 8), origen1904)
+            otherDate = fechaRegistroReciente
         End If
 
-        ' J y H pueden ordenar la fila si falta la fecha de finalización.
-        ' Solo la columna identificada de finalización se vuelca para un Completed.
+        ' El FOD inicial conserva la selección y la precedencia de fechas que ya usaba.
         fechaOrden = registrationDate
         If fechaOrden = 0 Then fechaOrden = otherDate
         cursoFecha = 0
@@ -288,9 +301,8 @@ Private Sub GenerarInformeFODInterno(ByVal rutaCarpetaWbFicheroFuenteFOD As Stri
             If columnaFinalizacion <> 11 Then TrazarFechaOrigenFOD wsData.Cells(i, 11), origen1904, True
         End If
 
-        ' Guardar los Pending explícitos sin fecha para compararlos con el historial
-        ' del mismo curso. Un estado vacío del origen no activa esta regla.
-        If status = "Pending" And fechaOrden = 0 Then
+        ' Un pendiente sin fecha puede contrastarse con el historial del FOD inicial.
+        If esCursoInicial And status = "Pending" And fechaOrden = 0 Then
             If Len(TextoFOD(datos(fila, 6))) > 0 Then
                 Set pendientesSinFecha = personaData("PendientesSinFecha")
                 pendientesSinFecha(courseName) = True
@@ -309,13 +321,14 @@ Private Sub GenerarInformeFODInterno(ByVal rutaCarpetaWbFicheroFuenteFOD As Stri
             End If
         End If
 
-        If EsMejorRegistroFOD(status, fechaOrden, cursoFecha, _
+        ' Evaluar todas las filas de FOD por H, antes de calcular la caducidad.
+        If EsMejorRegistroFOD(status, marcaRegistroReciente, fechaRegistroReciente, _
                              personaData("CursoRecienteEstado"), personaData("CursoRecienteFechaOrden"), _
                              personaData("CursoRecienteFecha")) Then
             personaData("CursoRecienteNombre") = courseName
             personaData("CursoRecienteEstado") = status
-            personaData("CursoRecienteFecha") = cursoFecha
-            personaData("CursoRecienteFechaOrden") = fechaOrden
+            personaData("CursoRecienteFecha") = fechaRegistroReciente
+            personaData("CursoRecienteFechaOrden") = marcaRegistroReciente
             If personID = idDiagnostico Then filaRecienteDiagnostico = i
         End If
 NextIteration:
@@ -345,7 +358,6 @@ NextIteration:
     For Each personaKey In personas.Keys
         Set personaData = personas(personaKey)
         AplicarPendienteSinFechaFOD personaData, "InitialFODNombre", "InitialFODStatus", "InitialFODFecha"
-        AplicarPendienteSinFechaFOD personaData, "CursoRecienteNombre", "CursoRecienteEstado", "CursoRecienteFecha"
         With wsReport
             .Cells(reportRow, "A").Value = personaData("Apellidos")
             .Cells(reportRow, "B").Value = personaData("Nombre")
@@ -606,6 +618,35 @@ Private Function TextoFechaSinLimiteDeAnchoFOD(ByVal celda As Range, ByVal valor
 SinTexto:
 End Function
 
+Private Function SegundosRegistroFOD(ByVal valor As Variant) As Long
+    Dim texto As String
+    Dim posicionHora As Long
+    Dim partes() As String
+    Dim serie As Double
+
+    ' Se llama después de validar la fecha, para desempatar registros del mismo día.
+    If VarType(valor) = vbString Then
+        texto = TextoFOD(valor)
+        posicionHora = InStr(texto, " ")
+        If posicionHora = 0 Then posicionHora = InStr(texto, "T")
+        If posicionHora > 0 Then
+            texto = Trim$(Mid$(texto, posicionHora + 1))
+            If Not HoraValidaFOD(texto) Then Exit Function
+            partes = Split(texto, ":")
+            SegundosRegistroFOD = CLng(partes(0)) * 3600& + CLng(partes(1)) * 60&
+            If UBound(partes) = 2 Then SegundosRegistroFOD = SegundosRegistroFOD + CLng(partes(2))
+            Exit Function
+        End If
+        If texto Like "*[!0-9.]*" Then Exit Function
+        serie = Val(texto)
+    Else
+        serie = CDbl(valor)
+    End If
+
+    SegundosRegistroFOD = CLng((serie - Fix(serie)) * 86400#)
+    If SegundosRegistroFOD = 86400 Then SegundosRegistroFOD = 86399
+End Function
+
 Private Sub TrazarFechaOrigenFOD(ByVal celda As Range, ByVal sistema1904 As Boolean, _
                                   Optional ByVal leerComoOrigen As Boolean = False)
     Dim serie As Long
@@ -736,8 +777,8 @@ Private Function PrioridadEmpateFOD(ByVal estado As String) As Long
     End Select
 End Function
 
-Private Function EsMejorRegistroFOD(ByVal estado As String, ByVal fechaOrden As Long, ByVal fechaCurso As Long, _
-                                    ByVal estadoAnterior As String, ByVal fechaOrdenAnterior As Long, _
+Private Function EsMejorRegistroFOD(ByVal estado As String, ByVal fechaOrden As Double, ByVal fechaCurso As Long, _
+                                    ByVal estadoAnterior As String, ByVal fechaOrdenAnterior As Double, _
                                     ByVal fechaCursoAnterior As Long) As Boolean
     Dim prioridad As Long
     Dim prioridadAnterior As Long
