@@ -1,3 +1,69 @@
+
+
+FOD.txt
+Documento
+Actúa como un desarrollador senior experto en VBA para Excel, depuración de macros y tratamiento de fechas/estados en informes corporativos.
+
+Necesito que analices el código VBA adjunto (basado en mi macro actual) y generes una versión corregida y completa del código para crear un archivo nuevo/actualizado que genere el informe FOD sin los errores actuales.
+
+### Contexto y dependencias que NO debes romper
+- La macro lee datos desde el archivo más reciente "My Team All Learning_" en la ruta configurada y cruza información con LibreriaModulosConFuncionesReutilizables.xlsm, Macro Curriculums.xlsm (hoja Usuarios_Inactivos), y las hojas locales Configuración, Informe FOD y Resumen FOD.
+- Exporta el resultado a un nuevo libro .xlsx dentro de la subcarpeta `\Informes\` con control de duplicados por fecha.
+- Mantén intactas las rutas, nombres de hojas, variables de control (isMacroEjecutadaDesdeMacroCurriculums, etc.) y el manejo seguro de salida (SafeExit restaurando ScreenUpdating, Calculation y EnableEvents).
+
+### Problemas críticos que debes resolver
+
+1. **Error en los estados de los cursos (no todo debe salir como "Completed"):**
+   - Actualmente el informe termina marcando erróneamente como completados registros que no lo están.
+   - Revisa toda la lógica de asignación, caducidad (>= 730 días) y sobrescritura de estados (tanto en InitialFODStatus como en CursoRecienteEstado, incluyendo casos como Completed, Completed (Equivalent), Completed (Caducado), Registered, Exempt y Pending / no completado).
+   - Asegúrate de que cada empleado y curso se evalúe fielmente según su estado real y su antigüedad, sin forzar estados a completado cuando no corresponda.
+
+2. **Error de inversión de fechas cuando el día es del 1 al 12:**
+   - Cuando la fecha de origen tiene día entre 01 y 12 (por ejemplo 03/09/2023), en el informe exportado se invierte o altera (por ejemplo, intercambiando día/mes o cambiando el año). Cuando el día es mayor de 12 (por ejemplo 15/04/2023), no ocurre.
+   - Revisa ParseFechaSinLocale, la asignación de cursoFecha, CDate(...), Int(...) y el volcado/formato en las celdas del informe (dd/mm/yyyy) para garantizar que la fecha real del archivo origen (dd/mm/yyyy) se conserve intacta sin ambigüedades de configuración regional (locale).
+
+### Qué necesito que me entregues
+1. Un diagnóstico breve y claro de qué líneas del código actual causan ambos fallos.
+2. El código VBA completo y listo para pegar, bien comentado, indicando qué debe ir en un módulo estándar y manteniendo todas las funciones auxiliares necesarias.
+3. Una lista de comprobaciones rápidas para validar las pruebas con fechas del 1 al 12, fechas > 12 y distintos estados de curso.
+
+A continuación te adjunto mi código VBA actual:
+…
+El archivo contiene el módulo VBA completo, con Main, GenerarInformeFOD y todas sus funciones auxiliares. En Excel, pulsa Alt + F11, abre el módulo estándar que contiene la macro FOD y sustituye todo su contenido por el del archivo. Después, ejecuta Depurar → Compilar VBAProject y lanza Main como de costumbre.
+
+Qué fallaba en el código original
+Estados. En las líneas 271 y 319 se descartaban estados antes de evaluar el curso inicial. En las líneas 457–459 se convertía Completed (Equivalent) en Completed. Además, las líneas 475–510 permitían que el curso reciente sobrescribiera el estado del inicial. Por ejemplo, un Exempt reciente podía convertir un inicial Pending en Completed.
+Fechas. En las líneas 304–317 se encadenaban .Value, IsDate y Int(CDate(...)), y se recurría a J o H si K no pasaba la validación. Eso podía mostrar otra fecha y usarla para calcular la caducidad. El DateSerial original ya leía 03/09/2023 como 3 de septiembre cuando recibía ese texto literal. Si el origen ya lo había guardado como 9 de marzo, aplicar dd/mm/yyyy al exportar solo cambiaba la presentación de ese valor.
+El módulo corregido interpreta el texto como día/mes/año y escribe fechas numéricas en G e I. Evalúa el inicial y el curso reciente por separado. Aplica la caducidad desde los 730 días a Completed y Completed (Equivalent) usando solo la fecha de finalización de K. Si falta K, conserva el estado declarado y deja en blanco la fecha de finalización. En un empate de fecha, da prioridad a Pending, Registered o Exempt frente a Completed.
+
+Comprobaciones rápidas
+Prueba	Resultado esperado
+K contiene 03/09/2023 o 12/04/2026, primero como texto y luego como fecha real de Excel	El .xlsx muestra 03/09/2023 y 12/04/2026 en ambos casos.
+K contiene 15/04/2023 o 31/04/2023	La primera fecha se conserva. La segunda se rechaza y la fecha de finalización queda en blanco.
+Completed o Completed (Equivalent) con K de hace 729 y 730 días	A los 729 conserva su estado original. A los 730 muestra Completed (Caducado).
+Registered, Exempt, Pending o In Progress con una fecha antigua	Cada fila conserva su estado. Un Completed (Caducado) de origen también se conserva.
+FOD inicial caducado y otro FOD más reciente en estado Exempt o Registered	F muestra Completed (Caducado) y H muestra el estado del curso reciente.
+Completed con K vacía y J o H informada	Muestra Completed, con la fecha de finalización en blanco.
+Dos ejecuciones el mismo día	Se crean dos .xlsx en \Informes\. El segundo lleva el sufijo (1) si es el primer duplicado.
+Verifiqué en el código las rutas, las llamadas a la librería y la restauración de los ajustes previos de Excel en SafeExit. La ejecución de extremo a extremo queda pendiente con los libros corporativos. En esa prueba, comprueba también los totales de Resumen FOD si alguna fórmula cuenta únicamente el texto exacto Completed, porque Completed (Equivalent) ahora se conserva como estado propio.
+
+
+FOD_corregido.txt
+Documento
+Los pending no me lo está leyendo. EN la tabla del informe aparece todo verde y en la tabla del resumen me aparece todo a 0
+Archivo adjunto del usuario
+Los pending no me lo está leyendo. EN la tabla del informe aparece todo verde y en la tabla del resumen me aparece todo a 0
+Informe FOD. Si el origen trae un Pending explícito sin fecha y la macro había seleccionado una finalización del mismo curso, ahora muestra Pending en rojo y deja la fecha en blanco. Esa regla se aplica tanto al FOD inicial como al curso reciente.
+Resumen FOD. La fila PENDING calcula POPULATION − COMPLETED en cada columna. Con los datos de tu captura, verifiqué que salen 17 para TAOA(X), 2 para TAOA y 9 para TAOAA. El cálculo conserva el criterio que ya usa la fila COMPLETED.
+Sustituye el contenido completo del módulo FOD en Alt + F11 y ejecuta Main para generar un nuevo informe. Verifiqué el cálculo con los datos de la captura. La lectura de los Pending reales queda por comprobar en tu Excel con el archivo de origen.
+
+
+FOD_corregido.txt
+Documento
+
+
+q
+
 Option Explicit
 
 Private Const DIAS_CADUCIDAD_FOD As Long = 730
@@ -34,6 +100,7 @@ Sub GenerarInformeFOD(Optional ByVal rutaCarpetaWbFicheroFuenteFOD As String)
     Dim currentDate As Date
     Dim personID As String
     Dim personas As Object
+    Dim pendientesSinFecha As Object
     Dim personaKey As Variant
     Dim personaData As Object
     Dim myTeamAllLearningFileFullPath As String
@@ -210,6 +277,10 @@ Sub GenerarInformeFOD(Optional ByVal rutaCarpetaWbFicheroFuenteFOD As String)
             partesSiglum = Split(valorColumnaR, " \ ")
             If UBound(partesSiglum) >= 1 Then personaData("Siglum") = partesSiglum(1)
 
+            Set pendientesSinFecha = CreateObject("Scripting.Dictionary")
+            pendientesSinFecha.CompareMode = vbTextCompare
+            personaData.Add "PendientesSinFecha", pendientesSinFecha
+            personaData("InitialFODNombre") = ""
             personaData("InitialFODStatus") = ""
             personaData("InitialFODFecha") = 0&
             personaData("InitialFODFechaOrden") = 0&
@@ -244,10 +315,20 @@ Sub GenerarInformeFOD(Optional ByVal rutaCarpetaWbFicheroFuenteFOD As String)
                 cursoFecha = fechaOrden
         End Select
 
+        ' Guardar los Pending explícitos sin fecha para compararlos con el historial
+        ' del mismo curso. Un estado vacío del origen no activa esta regla.
+        If status = "Pending" And fechaOrden = 0 Then
+            If Len(TextoFOD(datos(fila, 6))) > 0 Then
+                Set pendientesSinFecha = personaData("PendientesSinFecha")
+                pendientesSinFecha(courseName) = True
+            End If
+        End If
+
         If esCursoInicial Then
             If EsMejorRegistroFOD(status, fechaOrden, cursoFecha, _
                                  personaData("InitialFODStatus"), personaData("InitialFODFechaOrden"), _
                                  personaData("InitialFODFecha")) Then
+                personaData("InitialFODNombre") = courseName
                 personaData("InitialFODStatus") = status
                 personaData("InitialFODFecha") = cursoFecha
                 personaData("InitialFODFechaOrden") = fechaOrden
@@ -286,6 +367,8 @@ NextIteration:
     reportRow = 3
     For Each personaKey In personas.Keys
         Set personaData = personas(personaKey)
+        AplicarPendienteSinFechaFOD personaData, "InitialFODNombre", "InitialFODStatus", "InitialFODFecha"
+        AplicarPendienteSinFechaFOD personaData, "CursoRecienteNombre", "CursoRecienteEstado", "CursoRecienteFecha"
         With wsReport
             .Cells(reportRow, "A").Value = personaData("Apellidos")
             .Cells(reportRow, "B").Value = personaData("Nombre")
@@ -309,6 +392,8 @@ NextIteration:
         End With
         reportRow = reportRow + 1
     Next personaKey
+
+    ActualizarPendientesResumenFOD ThisWorkbook.Worksheets("Resumen FOD")
 
     ' Copiar juntas ambas hojas para mantener las referencias entre ellas en el exportado.
     Set informeWB = Workbooks.Add(xlWBATWorksheet)
@@ -379,9 +464,88 @@ SafeExit:
     End If
 End Sub
 
+Private Sub AplicarPendienteSinFechaFOD(ByVal personaData As Object, ByVal claveCurso As String, _
+                                         ByVal claveEstado As String, ByVal claveFecha As String)
+    Dim pendientesSinFecha As Object
+
+    Set pendientesSinFecha = personaData("PendientesSinFecha")
+    If Not pendientesSinFecha.Exists(personaData(claveCurso)) Then Exit Sub
+
+    ' Solo prevalece frente al historial de finalización del mismo curso.
+    Select Case personaData(claveEstado)
+        Case "Completed", "Completed (Equivalent)", "Completed (Caducado)"
+            personaData(claveEstado) = "Pending"
+            personaData(claveFecha) = 0&
+    End Select
+End Sub
+
+Private Sub ActualizarPendientesResumenFOD(ByVal hoja As Worksheet)
+    Dim rangoBusqueda As Range
+    Dim etiqueta As Range
+    Dim primeraDireccion As String
+    Dim ultimaColumna As Long
+    Dim columna As Long
+    Dim filaPendientes As Long
+    Dim poblacion As Range
+    Dim completados As Range
+    Dim cuadroActualizado As Boolean
+
+    Set rangoBusqueda = hoja.UsedRange
+    Set etiqueta = rangoBusqueda.Find(What:="PENDING", After:=rangoBusqueda.Cells(1, 1), _
+                                      LookIn:=xlValues, LookAt:=xlWhole, SearchOrder:=xlByRows, _
+                                      SearchDirection:=xlNext, MatchCase:=False, SearchFormat:=False)
+    If etiqueta Is Nothing Then
+        Err.Raise vbObjectError + 730, "ActualizarPendientesResumenFOD", _
+                  "No se encontró la fila PENDING en la hoja Resumen FOD."
+    End If
+
+    primeraDireccion = etiqueta.Address
+    Do
+        filaPendientes = etiqueta.Row
+        If filaPendientes >= 3 Then
+            If UCase$(TextoFOD(etiqueta.Offset(-2, 0).Value2)) = "POPULATION" And _
+               UCase$(TextoFOD(etiqueta.Offset(-1, 0).Value2)) = "COMPLETED" Then
+                ultimaColumna = hoja.Cells(filaPendientes - 2, hoja.Columns.Count).End(xlToLeft).Column
+                For columna = etiqueta.Column + 1 To ultimaColumna
+                    Set poblacion = hoja.Cells(filaPendientes - 2, columna)
+                    Set completados = hoja.Cells(filaPendientes - 1, columna)
+                    If TieneDatoResumenFOD(poblacion) And TieneDatoResumenFOD(completados) Then
+                        hoja.Cells(filaPendientes, columna).FormulaR1C1 = _
+                            "=IF(COUNT(R[-2]C:R[-1]C)=2,R[-2]C-R[-1]C,"""")"
+                        cuadroActualizado = True
+                    End If
+                Next columna
+            End If
+        End If
+        Set etiqueta = rangoBusqueda.FindNext(After:=etiqueta)
+        If etiqueta Is Nothing Then Exit Do
+    Loop Until etiqueta.Address = primeraDireccion
+
+    If Not cuadroActualizado Then
+        Err.Raise vbObjectError + 731, "ActualizarPendientesResumenFOD", _
+                  "No hay columnas con POPULATION y COMPLETED encima de PENDING en Resumen FOD."
+    End If
+End Sub
+
+Private Function TieneDatoResumenFOD(ByVal celda As Range) As Boolean
+    Dim valor As Variant
+
+    If celda.HasFormula Then
+        TieneDatoResumenFOD = True
+    Else
+        valor = celda.Value2
+        If Not IsEmpty(valor) Then TieneDatoResumenFOD = IsNumeric(valor)
+    End If
+End Function
+
 Private Function TextoFOD(ByVal valor As Variant) As String
+    Dim texto As String
+
     If IsError(valor) Or IsNull(valor) Or IsEmpty(valor) Then Exit Function
-    TextoFOD = Trim$(Replace(CStr(valor), ChrW(160), " "))
+    texto = Replace(CStr(valor), ChrW(160), " ")
+    texto = Replace(texto, vbTab, " ")
+    texto = Replace(texto, vbCr, " ")
+    TextoFOD = Trim$(Replace(texto, vbLf, " "))
 End Function
 
 Private Function NormalizarEstadoFOD(ByVal valor As Variant) As String
