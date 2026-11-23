@@ -195,22 +195,23 @@ Private Sub GenerarInformeFODInterno(ByVal rutaCarpetaWbFicheroFuenteFOD As Stri
         Next filas
     End With
 
-    ' Mantener la población previa y admitir cualquier estado en las filas de cursos FOD.
+    ' Primero identificar a los empleados del informe por ID y pertenencia a TAOA.
     Set personas = CreateObject("Scripting.Dictionary")
-    lastRow = wsData.Cells(wsData.Rows.Count, "A").End(xlUp).Row
+    lastRow = wsData.Cells(wsData.Rows.Count, "S").End(xlUp).Row
     origen1904 = wbData.Date1904
     If lastRow >= 2 Then datos = wsData.Range("A2:T" & lastRow).Value2
 
     For i = 2 To lastRow
         fila = i - 1  ' La primera fila de la matriz corresponde a la fila 2 de Excel.
         valorColumnaR = TextoFOD(datos(fila, 18))
-        If InStr(1, valorColumnaR, "TAOA", vbTextCompare) = 0 Then GoTo NextIteration
+        If InStr(1, valorColumnaR, "TAOA", vbTextCompare) = 0 Then GoTo SiguienteEmpleado
 
         personID = TextoFOD(datos(fila, 19))
-        If personID = "" Then GoTo NextIteration
+        If personID = "" Then GoTo SiguienteEmpleado
+        If personas.Exists(personID) Then GoTo SiguienteEmpleado
         If usuariosInactivos.Exists(personID) Then
             valorInvisible = usuariosInactivos(personID)
-            If UCase$(valorInvisible) = "SI" Then GoTo NextIteration
+            If UCase$(valorInvisible) = "SI" Then GoTo SiguienteEmpleado
         End If
 
         courseName = TextoFOD(datos(fila, 5))
@@ -223,35 +224,46 @@ Private Sub GenerarInformeFODInterno(ByVal rutaCarpetaWbFicheroFuenteFOD As Stri
                 Case "Registered", "Completed", "Exempt", "Completed (Equivalent)"
                     ' Estos estados ya incluían al empleado en la población general.
                 Case Else
-                    GoTo NextIteration
+                    GoTo SiguienteEmpleado
             End Select
         End If
 
-        personaKey = personID
-        If Not personas.Exists(personaKey) Then
-            Set personaData = CreateObject("Scripting.Dictionary")
-            personaData("Nombre") = datos(fila, 2)
-            personaData("Apellidos") = datos(fila, 1)
-            personaData("ID") = personID
-            personaData("Manager") = datos(fila, 20)
-            personaData("Siglum") = ""
-            partesSiglum = Split(valorColumnaR, " \ ")
-            If UBound(partesSiglum) >= 1 Then personaData("Siglum") = partesSiglum(1)
+        Set personaData = CreateObject("Scripting.Dictionary")
+        personaData("Nombre") = datos(fila, 2)
+        personaData("Apellidos") = datos(fila, 1)
+        personaData("ID") = personID
+        personaData("Manager") = datos(fila, 20)
+        personaData("Siglum") = ""
+        partesSiglum = Split(valorColumnaR, " \ ")
+        If UBound(partesSiglum) >= 1 Then personaData("Siglum") = partesSiglum(1)
 
-            personaData("InitialFODNombre") = ""
-            personaData("InitialFODStatus") = ""
-            personaData("InitialFODFecha") = 0&
-            personaData("InitialFODFechaOrden") = 0&
-            personaData("CursoRecienteNombre") = ""
-            personaData("CursoRecienteEstado") = ""
-            personaData("CursoRecienteFecha") = 0&
-            personaData("CursoRecienteSegundos") = 0&
-            personas.Add personaKey, personaData
-        Else
-            Set personaData = personas(personaKey)
-        End If
+        personaData("InitialFODNombre") = ""
+        personaData("InitialFODStatus") = ""
+        personaData("InitialFODFecha") = 0&
+        personaData("InitialFODFechaOrden") = 0&
+        personaData("CursoRecienteNombre") = ""
+        personaData("CursoRecienteEstado") = ""
+        personaData("CursoRecienteFecha") = 0&
+        personaData("CursoRecienteSegundos") = 0&
+        personas.Add personID, personaData
+SiguienteEmpleado:
+    Next i
+
+    ' Luego buscar todos los cursos de esos ID, incluso en filas sin TAOA en R.
+    For i = 2 To lastRow
+        fila = i - 1
+        personID = TextoFOD(datos(fila, 19))
+        If Not personas.Exists(personID) Then GoTo NextIteration
+
+        courseName = TextoFOD(datos(fila, 5))
+        status = NormalizarEstadoFOD(datos(fila, 6))
+        esCursoFOD = (InStr(1, courseName, "FOD", vbTextCompare) > 0)
+        ' Mantener el criterio previo del FOD inicial.
+        esCursoInicial = IsInCourseList(courseName, fodInitialTrainingCourses) And _
+                         (InStr(1, TextoFOD(datos(fila, 18)), "TAOA", vbTextCompare) > 0)
 
         If Not (esCursoInicial Or esCursoFOD) Then GoTo NextIteration
+        Set personaData = personas(personID)
 
         ' Para el FOD reciente, la fecha de realización viene siempre de H.
         fechaFODReciente = LeerFechaOrigenFOD(wsData.Cells(i, "H"), datos(fila, 8), origen1904)
@@ -290,7 +302,8 @@ Private Sub GenerarInformeFODInterno(ByVal rutaCarpetaWbFicheroFuenteFOD As Stri
         End Select
 
         If personID = idDiagnostico Then
-            Debug.Print "Origen fila " & i & " | " & courseName & " | " & status
+            Debug.Print "Origen fila " & i & " | " & courseName & " | " & status & _
+                        " | R: " & TextoFOD(datos(fila, 18))
             TrazarFechaOrigenFOD wsData.Cells(i, columnaFinalizacion), origen1904, True
             If columnaFinalizacion <> 8 Then TrazarFechaOrigenFOD wsData.Cells(i, 8), origen1904, True
             If columnaFinalizacion <> 10 Then TrazarFechaOrigenFOD wsData.Cells(i, 10), origen1904, True
