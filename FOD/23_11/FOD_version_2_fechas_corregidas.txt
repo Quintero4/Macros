@@ -53,24 +53,31 @@ Private Function ParseFechaSinLocale(ByVal texto As String) As Variant
     ParseFechaSinLocale = fecha
 End Function
 
-Private Function LeerFechaFOD(ByVal celda As Range, ByVal ajusteOrigen As Long) As Variant
+Private Function LeerFechaFOD(ByVal celda As Range, ByVal ajusteOrigen As Long, _
+                              ByRef textoFecha As String) As Variant
     Dim valor As Variant
     Dim fecha As Variant
     Dim serie As Double
+    Dim textoOrigen As String
 
+    textoFecha = ""
     valor = celda.Value2
     Select Case VarType(valor)
         Case vbString
-            fecha = ParseFechaSinLocale(CStr(valor))
+            textoOrigen = CStr(valor)
+            fecha = ParseFechaSinLocale(textoOrigen)
             If VarType(fecha) = vbDate Then
+                textoFecha = textoOrigen
                 LeerFechaFOD = fecha
                 Exit Function
             End If
             If Not IsNumeric(valor) Then Exit Function
         Case vbDouble
             ' Si Excel ya convirtió la celda, respetar la fecha que muestra el origen.
-            fecha = ParseFechaSinLocale(celda.Text)
+            textoOrigen = CStr(celda.Text)
+            fecha = ParseFechaSinLocale(textoOrigen)
             If VarType(fecha) = vbDate Then
+                textoFecha = textoOrigen
                 LeerFechaFOD = fecha
                 Exit Function
             End If
@@ -85,7 +92,17 @@ Private Function LeerFechaFOD(ByVal celda As Range, ByVal ajusteOrigen As Long) 
     ' VBA y Excel difieren en los números de serie anteriores al 01/03/1900.
     If serie = 60 Then Exit Function
     If serie < 60 Then serie = serie + 1
-    LeerFechaFOD = CDate(serie)
+    fecha = CDate(serie)
+
+    If Len(textoOrigen) > 0 And InStr(textoOrigen, "#") = 0 _
+       And VarType(celda.Value) = vbDate Then
+        textoFecha = textoOrigen
+    Else
+        ' Si se ven almohadillas o un número de serie, reconstruir solo la presentación.
+        textoFecha = Right$("0" & Day(fecha), 2) & "/" & _
+                     Right$("0" & Month(fecha), 2) & "/" & Right$("0000" & Year(fecha), 4)
+    End If
+    LeerFechaFOD = fecha
 SerieInvalida:
 End Function
 
@@ -124,6 +141,10 @@ Sub GenerarInformeFOD(Optional ByVal rutaCarpetaWbFicheroFuenteFOD As String)
     Dim ajusteOrigen As Long
     Dim ajusteInforme As Long
     Dim cursoFecha As Variant
+    Dim cursoFechaTexto As String
+    Dim fechasInicialesExportadas() As Variant
+    Dim fechasRecientesExportadas() As Variant
+    Dim hojaInformeExportado As Worksheet
     Dim currentDate As Date
     Dim personID As String
     Dim colOffset As Integer
@@ -313,10 +334,12 @@ Sub GenerarInformeFOD(Optional ByVal rutaCarpetaWbFicheroFuenteFOD As String)
 
                 personaData("InitialFODStatus") = ""
                 personaData("InitialFODFecha") = ""
+                personaData("InitialFODFechaTexto") = ""
 
                 personaData("CursoRecienteNombre") = ""
                 personaData("CursoRecienteEstado") = ""
                 personaData("CursoRecienteFecha") = ""
+                personaData("CursoRecienteFechaTexto") = ""
 
                 personas.Add personaKey, personaData
             Else
@@ -325,9 +348,9 @@ Sub GenerarInformeFOD(Optional ByVal rutaCarpetaWbFicheroFuenteFOD As String)
 
             courseName = CStr(wsData.Cells(i, "E").Value)
 
-            cursoFecha = LeerFechaFOD(wsData.Cells(i, "K"), ajusteOrigen)
-            If IsEmpty(cursoFecha) Then cursoFecha = LeerFechaFOD(wsData.Cells(i, "J"), ajusteOrigen)
-            If IsEmpty(cursoFecha) Then cursoFecha = LeerFechaFOD(wsData.Cells(i, "H"), ajusteOrigen)
+            cursoFecha = LeerFechaFOD(wsData.Cells(i, "K"), ajusteOrigen, cursoFechaTexto)
+            If IsEmpty(cursoFecha) Then cursoFecha = LeerFechaFOD(wsData.Cells(i, "J"), ajusteOrigen, cursoFechaTexto)
+            If IsEmpty(cursoFecha) Then cursoFecha = LeerFechaFOD(wsData.Cells(i, "H"), ajusteOrigen, cursoFechaTexto)
 
             If IsInCourseList(courseName, fodInitialTrainingCourses) And status = "Completed" Then
                 If IsDate(cursoFecha) Then
@@ -335,10 +358,12 @@ Sub GenerarInformeFOD(Optional ByVal rutaCarpetaWbFicheroFuenteFOD As String)
                         If cursoFecha > personaData("InitialFODFecha") Then
                             personaData("InitialFODStatus") = status
                             personaData("InitialFODFecha") = cursoFecha
+                            personaData("InitialFODFechaTexto") = cursoFechaTexto
                         End If
                     Else
                         personaData("InitialFODStatus") = status
                         personaData("InitialFODFecha") = cursoFecha
+                        personaData("InitialFODFechaTexto") = cursoFechaTexto
                     End If
                     registrosIncluidos = registrosIncluidos + 1
                 End If
@@ -351,11 +376,13 @@ Sub GenerarInformeFOD(Optional ByVal rutaCarpetaWbFicheroFuenteFOD As String)
                             personaData("CursoRecienteNombre") = wsData.Cells(i, "E").Value
                             personaData("CursoRecienteEstado") = status
                             personaData("CursoRecienteFecha") = cursoFecha
+                            personaData("CursoRecienteFechaTexto") = cursoFechaTexto
                         End If
                     Else
                         personaData("CursoRecienteNombre") = wsData.Cells(i, "E").Value
                         personaData("CursoRecienteEstado") = status
                         personaData("CursoRecienteFecha") = cursoFecha
+                        personaData("CursoRecienteFechaTexto") = cursoFechaTexto
                     End If
                 End If
                 registrosIncluidos = registrosIncluidos + 1
@@ -381,6 +408,9 @@ NextIteration:
 
     reportRow = 3
     colOffset = 6
+
+    ReDim fechasInicialesExportadas(1 To personas.Count, 1 To 1)
+    ReDim fechasRecientesExportadas(1 To personas.Count, 1 To 1)
 
     Dim InitialFODStatus As String
     Dim InitialFODFecha As Variant
@@ -530,6 +560,8 @@ NextIteration:
             End Select
         End With
 
+        fechasInicialesExportadas(reportRow - 2, 1) = personaData("InitialFODFechaTexto")
+        fechasRecientesExportadas(reportRow - 2, 1) = personaData("CursoRecienteFechaTexto")
         reportRow = reportRow + 1
     Next personaKey
 
@@ -538,6 +570,18 @@ NextIteration:
     '-----------------------------------------------
     wsReport.Copy
     Set informeWB = ActiveWorkbook
+    Set hojaInformeExportado = informeWB.Worksheets(1)
+
+    ' Copiar literalmente las fechas seleccionadas. El formato Texto impide
+    ' que Excel vuelva a interpretar una cadena como 09/07/2026.
+    With hojaInformeExportado.Cells(3, colOffset + 1).Resize(personas.Count, 1)
+        .NumberFormat = "@"
+        .Value2 = fechasInicialesExportadas
+    End With
+    With hojaInformeExportado.Cells(3, colOffset + 3).Resize(personas.Count, 1)
+        .NumberFormat = "@"
+        .Value2 = fechasRecientesExportadas
+    End With
 
     ThisWorkbook.Sheets("Resumen FOD").Copy Before:=informeWB.Sheets(1)
     Set resumenFODWS = informeWB.Sheets(1)
@@ -593,4 +637,3 @@ Function IsInCourseList(courseName As String, courseList As Object) As Boolean
     Next k
     IsInCourseList = False
 End Function
-
