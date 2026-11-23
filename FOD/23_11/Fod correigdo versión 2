@@ -1,0 +1,918 @@
+Option Explicit
+
+Private Const DIAS_CADUCIDAD_FOD As Long = 730
+Private Const DESFASE_FECHAS_1904 As Long = 1462
+Private Const SERIE_MAXIMA_FOD As Long = 2958465
+Private Const FORMATO_FECHA_FOD As String = "dd""/""mm""/""yyyy"
+
+Sub Main()
+    Call GenerarInformeFOD
+End Sub
+
+Sub GenerarInformeFOD(Optional ByVal rutaCarpetaWbFicheroFuenteFOD As String)
+    GenerarInformeFODInterno rutaCarpetaWbFicheroFuenteFOD, ""
+End Sub
+
+Sub DiagnosticarFechaFOD()
+    Dim idDiagnostico As String
+
+    idDiagnostico = Trim$(InputBox("Introduce el ID del empleado para generar el informe y comprobar sus fechas.", _
+                                  "Comprobar fecha FOD"))
+    If Len(idDiagnostico) = 0 Then Exit Sub
+    GenerarInformeFODInterno "", idDiagnostico
+End Sub
+
+Private Sub GenerarInformeFODInterno(ByVal rutaCarpetaWbFicheroFuenteFOD As String, _
+                                     ByVal idDiagnostico As String)
+
+    ' Declaración de variables
+    Dim libreriaModulos As Workbook
+    Dim wbData As Workbook
+    Dim wbMacroCurriculum As Workbook
+    Dim wb As Workbook
+    Dim wsData As Worksheet
+    Dim wsReport As Worksheet
+    Dim wsUsuariosInactivos As Worksheet
+    Dim lastRow As Long
+    Dim reportRow As Long
+    Dim i As Long
+    Dim fila As Long
+    Dim filas As Long
+    Dim fodInitialTrainingCourses As Object
+    Dim courseName As String
+    Dim status As String
+    Dim completionDate As Long
+    Dim registrationDate As Long
+    Dim otherDate As Long
+    Dim cursoFecha As Long
+    Dim currentDate As Date
+    Dim personID As String
+    Dim personas As Object
+    Dim pendientesSinFecha As Object
+    Dim personaKey As Variant
+    Dim personaData As Object
+    Dim myTeamAllLearningFileFullPath As String
+    Dim valorColumnaR As String
+    Dim lastRowUsuariosInactivos As Long
+    Dim usuariosInactivos As Object
+    Dim valorColumnaInvisible As String
+    Dim valorColumnaIdUsuario As String
+    Dim valorInvisible As String
+    Dim fullPathWbMacroCurriculum As String
+    Dim isMacroEjecutadaDesdeMacroCurriculums As Boolean
+    Dim informeWB As Workbook
+    Dim resumenFODWS As Worksheet
+    Dim nombreInforme As String
+    Dim extensionInforme As String
+    Dim rutaInformes As String
+    Dim rutaFinal As String
+    Dim numeroArchivoConMismoNombre As Long
+
+    Dim datos As Variant
+    Dim partesSiglum As Variant
+    Dim esCursoInicial As Boolean
+    Dim esCursoFOD As Boolean
+    Dim origen1904 As Boolean
+    Dim columnaFinalizacion As Long
+    Dim filaInicialDiagnostico As Long
+    Dim filaRecienteDiagnostico As Long
+    Dim filaInformeDiagnostico As Long
+    Dim fechaOrden As Long
+    Dim ultimaFilaInforme As Long
+    Dim hojaTemporal As Worksheet
+    Dim calculoAnterior As XlCalculation
+    Dim pantallaAnterior As Boolean
+    Dim eventosAnteriores As Boolean
+    Dim alertasAnteriores As Boolean
+    Dim ajustesGuardados As Boolean
+    Dim informeGuardado As Boolean
+    Dim libreriaAbiertaPorMacro As Boolean
+    Dim curriculumAbiertoPorMacro As Boolean
+    Dim origenAbiertoPorMacro As Boolean
+    Dim mensajeError As String
+
+    On Error GoTo ControlError
+
+    pantallaAnterior = Application.ScreenUpdating
+    calculoAnterior = Application.Calculation
+    eventosAnteriores = Application.EnableEvents
+    alertasAnteriores = Application.DisplayAlerts
+    ajustesGuardados = True
+
+    Application.ScreenUpdating = False
+    Application.Calculation = xlCalculationManual
+    Application.EnableEvents = False
+    currentDate = Date
+
+    ' Reutilizar la librería si ya estaba abierta en esta instancia de Excel.
+    For Each wb In Workbooks
+        If wb.Name = "LibreriaModulosConFuncionesReutilizables.xlsm" Then
+            Set libreriaModulos = wb
+            Exit For
+        End If
+    Next wb
+    If libreriaModulos Is Nothing Then
+        Set libreriaModulos = Workbooks.Open("\\Spi60001.eadscasa.casa.corp\a400m san pablo\Lean_Manufacturing\10.- PCM\28. PCM\Development enviroment\LibreriaModulos\LibreriaModulosConFuncionesReutilizables.xlsm")
+        libreriaAbiertaPorMacro = True
+    End If
+
+    '-----------------------------------------------------------------------------------
+    ' OBTENER Y ABRIR EL ARCHIVO DE DATOS "My Team All Learning"
+    '-----------------------------------------------------------------------------------
+    If rutaCarpetaWbFicheroFuenteFOD = "" Then
+        rutaCarpetaWbFicheroFuenteFOD = "\\Spi60001.eadscasa.casa.corp\a400m san pablo\Lean_Manufacturing\10.- PCM\28. PCM\1.1.7 Macro Unificar All Learning\Output\"
+        isMacroEjecutadaDesdeMacroCurriculums = False
+    Else
+        isMacroEjecutadaDesdeMacroCurriculums = True
+    End If
+
+    myTeamAllLearningFileFullPath = Application.Run("'LibreriaModulosConFuncionesReutilizables.xlsm'!GetMostRecentAbsolutePathFileInAFolder", _
+        "My Team All Learning_", _
+        rutaCarpetaWbFicheroFuenteFOD)
+
+    If myTeamAllLearningFileFullPath = "" Then
+        MsgBox "No se encontró el archivo 'My Team All Learning'.", vbCritical
+        GoTo SafeExit
+    End If
+
+    ' Leer el libro seleccionado directamente. En fechas numéricas ambiguas,
+    ' la presentación de la propia celda decide el orden de día y mes.
+    Set wbData = AbrirOrigenFOD(myTeamAllLearningFileFullPath, origenAbiertoPorMacro)
+    Set wsData = wbData.Worksheets("My Team All Learning")
+    columnaFinalizacion = ColumnaFinalizacionFOD(wsData)
+    If Len(idDiagnostico) > 0 Then
+        Debug.Print "Archivo FOD: " & wbData.FullName
+        Debug.Print "Columna de finalización: " & wsData.Cells(1, columnaFinalizacion).Address(False, False) & _
+                    " | " & TextoFOD(wsData.Cells(1, columnaFinalizacion).Value2)
+    End If
+
+    '-----------------------------------------------------------------------------------
+    ' CARGAR LA LISTA DE CURSOS FOD CONSIDERADOS INICIALES EN LA HOJA CONFIGURACIÓN
+    '-----------------------------------------------------------------------------------
+    Set fodInitialTrainingCourses = CreateObject("Scripting.Dictionary")
+
+    With ThisWorkbook.Sheets("Configuración")
+        For fila = 2 To .Cells(.Rows.Count, "A").End(xlUp).Row
+            If Len(TextoFOD(.Cells(fila, "A").Value2)) > 0 Then
+                fodInitialTrainingCourses.Add CStr(fila), TextoFOD(.Cells(fila, "A").Value2)
+            End If
+        Next fila
+    End With
+
+    '-----------------------------------------------------------------------------------
+    ' CARGAR USUARIOS_INACTIVOS DE LA MACRO CURRICULUMS
+    '-----------------------------------------------------------------------------------
+    Set usuariosInactivos = CreateObject("Scripting.Dictionary")
+    fullPathWbMacroCurriculum = "\\Spi60001.eadscasa.casa.corp\a400m san pablo\Lean_Manufacturing\10.- PCM\28. PCM\1.1.3 Macro Curriculums\Macro Curriculums.xlsm"
+
+    For Each wb In Workbooks
+        If wb.Name = "Macro Curriculums.xlsm" Then
+            Set wbMacroCurriculum = wb
+            Exit For
+        End If
+    Next wb
+    If wbMacroCurriculum Is Nothing Then
+        Set wbMacroCurriculum = Workbooks.Open(fullPathWbMacroCurriculum)
+        curriculumAbiertoPorMacro = True
+    End If
+
+    Set wsUsuariosInactivos = wbMacroCurriculum.Sheets("Usuarios_Inactivos")
+
+    With wsUsuariosInactivos
+        lastRowUsuariosInactivos = .Cells(.Rows.Count, "B").End(xlUp).Row
+        For filas = 2 To lastRowUsuariosInactivos
+            valorColumnaIdUsuario = TextoFOD(.Cells(filas, "C").Value2)
+            valorColumnaInvisible = TextoFOD(.Cells(filas, "D").Value2)
+            If Len(valorColumnaIdUsuario) > 0 Then
+                If Not usuariosInactivos.Exists(valorColumnaIdUsuario) Then
+                    usuariosInactivos.Add valorColumnaIdUsuario, valorColumnaInvisible
+                End If
+            End If
+        Next filas
+    End With
+
+    ' Mantener la población previa y admitir cualquier estado en las filas de cursos FOD.
+    Set personas = CreateObject("Scripting.Dictionary")
+    lastRow = wsData.Cells(wsData.Rows.Count, "A").End(xlUp).Row
+    origen1904 = wbData.Date1904
+    If lastRow >= 2 Then datos = wsData.Range("A2:T" & lastRow).Value2
+
+    For i = 2 To lastRow
+        fila = i - 1  ' La primera fila de la matriz corresponde a la fila 2 de Excel.
+        valorColumnaR = TextoFOD(datos(fila, 18))
+        If InStr(1, valorColumnaR, "TAOA", vbTextCompare) = 0 Then GoTo NextIteration
+
+        personID = TextoFOD(datos(fila, 19))
+        If personID = "" Then GoTo NextIteration
+        If usuariosInactivos.Exists(personID) Then
+            valorInvisible = usuariosInactivos(personID)
+            If UCase$(valorInvisible) = "SI" Then GoTo NextIteration
+        End If
+
+        courseName = TextoFOD(datos(fila, 5))
+        status = NormalizarEstadoFOD(datos(fila, 6))
+        esCursoInicial = IsInCourseList(courseName, fodInitialTrainingCourses)
+        esCursoFOD = esCursoInicial Or (InStr(1, courseName, "FOD", vbTextCompare) > 0)
+
+        If Not esCursoFOD Then
+            Select Case status
+                Case "Registered", "Completed", "Exempt", "Completed (Equivalent)"
+                    ' Estos estados ya incluían al empleado en la población general.
+                Case Else
+                    GoTo NextIteration
+            End Select
+        End If
+
+        personaKey = personID
+        If Not personas.Exists(personaKey) Then
+            Set personaData = CreateObject("Scripting.Dictionary")
+            personaData("Nombre") = datos(fila, 2)
+            personaData("Apellidos") = datos(fila, 1)
+            personaData("ID") = personID
+            personaData("Manager") = datos(fila, 20)
+            personaData("Siglum") = ""
+            partesSiglum = Split(valorColumnaR, " \ ")
+            If UBound(partesSiglum) >= 1 Then personaData("Siglum") = partesSiglum(1)
+
+            Set pendientesSinFecha = CreateObject("Scripting.Dictionary")
+            pendientesSinFecha.CompareMode = vbTextCompare
+            personaData.Add "PendientesSinFecha", pendientesSinFecha
+            personaData("InitialFODNombre") = ""
+            personaData("InitialFODStatus") = ""
+            personaData("InitialFODFecha") = 0&
+            personaData("InitialFODFechaOrden") = 0&
+            personaData("CursoRecienteNombre") = ""
+            personaData("CursoRecienteEstado") = ""
+            personaData("CursoRecienteFecha") = 0&
+            personaData("CursoRecienteFechaOrden") = 0&
+            personas.Add personaKey, personaData
+        Else
+            Set personaData = personas(personaKey)
+        End If
+
+        If Not esCursoFOD Then GoTo NextIteration
+
+        completionDate = LeerFechaOrigenFOD(wsData.Cells(i, columnaFinalizacion), _
+                                          datos(fila, columnaFinalizacion), origen1904)
+        registrationDate = 0
+        otherDate = 0
+        If columnaFinalizacion <> 10 Then
+            registrationDate = LeerFechaOrigenFOD(wsData.Cells(i, "J"), datos(fila, 10), origen1904)
+        End If
+        If columnaFinalizacion <> 8 Then
+            otherDate = LeerFechaOrigenFOD(wsData.Cells(i, "H"), datos(fila, 8), origen1904)
+        End If
+
+        ' J y H pueden ordenar la fila si falta la fecha de finalización.
+        ' Solo la columna identificada de finalización se vuelca para un Completed.
+        fechaOrden = registrationDate
+        If fechaOrden = 0 Then fechaOrden = otherDate
+        cursoFecha = 0
+        Select Case status
+            Case "Completed", "Completed (Equivalent)", "Completed (Caducado)"
+                cursoFecha = completionDate
+                If cursoFecha <> 0 Then fechaOrden = cursoFecha
+            Case "Exempt"
+                cursoFecha = completionDate
+                If cursoFecha = 0 Then cursoFecha = fechaOrden
+                fechaOrden = cursoFecha
+            Case Else
+                cursoFecha = fechaOrden
+        End Select
+
+        If personID = idDiagnostico Then
+            Debug.Print "Origen fila " & i & " | " & courseName & " | " & status
+            TrazarFechaOrigenFOD wsData.Cells(i, columnaFinalizacion), origen1904, True
+            If columnaFinalizacion <> 8 Then TrazarFechaOrigenFOD wsData.Cells(i, 8), origen1904, True
+            If columnaFinalizacion <> 10 Then TrazarFechaOrigenFOD wsData.Cells(i, 10), origen1904, True
+            If columnaFinalizacion <> 11 Then TrazarFechaOrigenFOD wsData.Cells(i, 11), origen1904, True
+        End If
+
+        ' Guardar los Pending explícitos sin fecha para compararlos con el historial
+        ' del mismo curso. Un estado vacío del origen no activa esta regla.
+        If status = "Pending" And fechaOrden = 0 Then
+            If Len(TextoFOD(datos(fila, 6))) > 0 Then
+                Set pendientesSinFecha = personaData("PendientesSinFecha")
+                pendientesSinFecha(courseName) = True
+            End If
+        End If
+
+        If esCursoInicial Then
+            If EsMejorRegistroFOD(status, fechaOrden, cursoFecha, _
+                                 personaData("InitialFODStatus"), personaData("InitialFODFechaOrden"), _
+                                 personaData("InitialFODFecha")) Then
+                personaData("InitialFODNombre") = courseName
+                personaData("InitialFODStatus") = status
+                personaData("InitialFODFecha") = cursoFecha
+                personaData("InitialFODFechaOrden") = fechaOrden
+                If personID = idDiagnostico Then filaInicialDiagnostico = i
+            End If
+        End If
+
+        If EsMejorRegistroFOD(status, fechaOrden, cursoFecha, _
+                             personaData("CursoRecienteEstado"), personaData("CursoRecienteFechaOrden"), _
+                             personaData("CursoRecienteFecha")) Then
+            personaData("CursoRecienteNombre") = courseName
+            personaData("CursoRecienteEstado") = status
+            personaData("CursoRecienteFecha") = cursoFecha
+            personaData("CursoRecienteFechaOrden") = fechaOrden
+            If personID = idDiagnostico Then filaRecienteDiagnostico = i
+        End If
+NextIteration:
+    Next i
+
+    If personas.Count = 0 Then
+        MsgBox "No hay empleados TAOA elegibles para generar el informe FOD.", vbInformation
+        GoTo SafeExit
+    End If
+
+    ' Volcar los bloques de estado y fecha por separado, sobre las columnas F:I de la plantilla.
+    Set wsReport = ThisWorkbook.Sheets("Informe FOD")
+    ultimaFilaInforme = wsReport.Cells(wsReport.Rows.Count, "C").End(xlUp).Row
+    If ultimaFilaInforme < 1000 Then ultimaFilaInforme = 1000
+    If ultimaFilaInforme < personas.Count + 2 Then ultimaFilaInforme = personas.Count + 2
+    With wsReport.Range("A3:Z" & ultimaFilaInforme)
+        .ClearContents
+        .Interior.Color = RGB(255, 255, 255)
+        .Font.Color = RGB(0, 0, 0)
+    End With
+    wsReport.Range("G3:G" & (personas.Count + 2)).NumberFormat = FORMATO_FECHA_FOD
+    wsReport.Range("I3:I" & (personas.Count + 2)).NumberFormat = FORMATO_FECHA_FOD
+    If wsReport.Columns("G").ColumnWidth < 13 Then wsReport.Columns("G").ColumnWidth = 13
+    If wsReport.Columns("I").ColumnWidth < 13 Then wsReport.Columns("I").ColumnWidth = 13
+
+    reportRow = 3
+    For Each personaKey In personas.Keys
+        Set personaData = personas(personaKey)
+        AplicarPendienteSinFechaFOD personaData, "InitialFODNombre", "InitialFODStatus", "InitialFODFecha"
+        AplicarPendienteSinFechaFOD personaData, "CursoRecienteNombre", "CursoRecienteEstado", "CursoRecienteFecha"
+        With wsReport
+            .Cells(reportRow, "A").Value = personaData("Apellidos")
+            .Cells(reportRow, "B").Value = personaData("Nombre")
+            .Cells(reportRow, "C").Value = personaData("ID")
+            .Cells(reportRow, "D").Value = personaData("Siglum")
+            .Cells(reportRow, "E").Value = personaData("Manager")
+
+            If usuariosInactivos.Exists(personaKey) Then
+                If UCase$(usuariosInactivos(personaKey)) = "NO" Then
+                    .Range("A" & reportRow & ":B" & reportRow).Font.Color = RGB(255, 0, 0)
+                End If
+            End If
+
+            EscribirEstadoFOD .Cells(reportRow, "F"), .Cells(reportRow, "G"), _
+                              personaData("InitialFODStatus"), personaData("InitialFODFecha"), _
+                              currentDate, ThisWorkbook.Date1904
+            EscribirEstadoFOD .Cells(reportRow, "H"), .Cells(reportRow, "I"), _
+                              personaData("CursoRecienteEstado"), personaData("CursoRecienteFecha"), _
+                              currentDate, ThisWorkbook.Date1904, True
+            .Cells(reportRow, "J").Value = personaData("CursoRecienteNombre")
+            If personaKey = idDiagnostico Then
+                filaInformeDiagnostico = reportRow
+                Debug.Print "FOD inicial | fila de origen " & filaInicialDiagnostico & " | " & personaData("InitialFODNombre")
+                TrazarFechaOrigenFOD .Cells(reportRow, "G"), ThisWorkbook.Date1904
+                Debug.Print "FOD reciente | fila de origen " & filaRecienteDiagnostico & " | " & personaData("CursoRecienteNombre")
+                TrazarFechaOrigenFOD .Cells(reportRow, "I"), ThisWorkbook.Date1904
+            End If
+        End With
+        reportRow = reportRow + 1
+    Next personaKey
+
+    ActualizarPendientesResumenFOD ThisWorkbook.Worksheets("Resumen FOD")
+
+    ' Copiar juntas ambas hojas para mantener las referencias entre ellas en el exportado.
+    Set informeWB = Workbooks.Add(xlWBATWorksheet)
+    informeWB.Date1904 = ThisWorkbook.Date1904
+    Set hojaTemporal = informeWB.Worksheets(1)
+    ThisWorkbook.Worksheets(Array("Resumen FOD", "Informe FOD")).Copy Before:=hojaTemporal
+    Set resumenFODWS = informeWB.Worksheets("Resumen FOD")
+    If resumenFODWS.Index <> 1 Then resumenFODWS.Move Before:=informeWB.Worksheets(1)
+
+    Application.DisplayAlerts = False
+    hojaTemporal.Delete
+    Application.DisplayAlerts = alertasAnteriores
+    With informeWB.Worksheets("Informe FOD")
+        AsegurarFormatoFechaExportadaFOD .Range("G3:G" & (reportRow - 1))
+        AsegurarRojoCaducadoFOD .Range("H3:H" & (reportRow - 1))
+        AsegurarFormatoFechaExportadaFOD .Range("I3:I" & (reportRow - 1))
+        .Calculate
+    End With
+    resumenFODWS.Calculate
+
+    ' Conservar carpeta, nombre por fecha y sufijo de duplicados.
+    rutaInformes = ThisWorkbook.Path & "\Informes\"
+    If Dir(rutaInformes, vbDirectory) = "" Then MkDir rutaInformes
+
+    nombreInforme = "TAOA FOD " & Application.WorksheetFunction.Text(currentDate, "mmm.dd.yyyy")
+    extensionInforme = ".xlsx"
+    rutaFinal = rutaInformes & nombreInforme & extensionInforme
+
+    numeroArchivoConMismoNombre = 0
+    Do While Dir(rutaFinal, vbReadOnly Or vbHidden Or vbSystem Or vbArchive) <> ""
+        numeroArchivoConMismoNombre = numeroArchivoConMismoNombre + 1
+        rutaFinal = rutaInformes & nombreInforme & " (" & numeroArchivoConMismoNombre & ")" & extensionInforme
+    Loop
+
+    Application.DisplayAlerts = False
+    informeWB.SaveAs Filename:=rutaFinal, FileFormat:=xlOpenXMLWorkbook
+    informeGuardado = True
+    If Len(idDiagnostico) > 0 Then
+        Debug.Print "Informe exportado: " & rutaFinal
+        If filaInformeDiagnostico = 0 Then
+            Debug.Print "El ID indicado no se incluyó en el informe."
+        Else
+            With informeWB.Worksheets("Informe FOD")
+                TrazarFechaOrigenFOD .Cells(filaInformeDiagnostico, "G"), informeWB.Date1904
+                TrazarFechaOrigenFOD .Cells(filaInformeDiagnostico, "I"), informeWB.Date1904
+            End With
+        End If
+    End If
+    GoTo SafeExit
+
+ControlError:
+    mensajeError = "Error " & Err.Number & " al generar el informe FOD: " & Err.Description
+    Resume SafeExit
+
+SafeExit:
+    On Error Resume Next
+    If Not informeGuardado Then
+        If Not informeWB Is Nothing Then informeWB.Close SaveChanges:=False
+    End If
+    If origenAbiertoPorMacro Then wbData.Close SaveChanges:=False
+    If libreriaAbiertaPorMacro Then libreriaModulos.Close SaveChanges:=False
+    If curriculumAbiertoPorMacro Then
+        If Not isMacroEjecutadaDesdeMacroCurriculums Or Not informeGuardado Then
+            wbMacroCurriculum.Close SaveChanges:=False
+        End If
+    End If
+
+    If ajustesGuardados Then
+        Application.DisplayAlerts = alertasAnteriores
+        Application.Calculation = calculoAnterior
+        Application.EnableEvents = eventosAnteriores
+        Application.ScreenUpdating = pantallaAnterior
+    End If
+    On Error GoTo 0
+
+    If Len(mensajeError) > 0 Then
+        MsgBox mensajeError, vbCritical
+    ElseIf informeGuardado Then
+        If isMacroEjecutadaDesdeMacroCurriculums Then
+            ThisWorkbook.Close SaveChanges:=True
+        Else
+            MsgBox "Ejecución finalizada e informe guardado en: " & rutaFinal, vbInformation
+        End If
+    End If
+End Sub
+
+Private Function AbrirOrigenFOD(ByVal ruta As String, ByRef abiertoPorMacro As Boolean) As Workbook
+    Dim libro As Workbook
+
+    For Each libro In Application.Workbooks
+        If StrComp(libro.FullName, ruta, vbTextCompare) = 0 Then
+            Set AbrirOrigenFOD = libro
+            Exit Function
+        End If
+    Next libro
+
+    Set AbrirOrigenFOD = Application.Workbooks.Open(Filename:=ruta, UpdateLinks:=0, ReadOnly:=True, _
+                                                     IgnoreReadOnlyRecommended:=True, AddToMru:=False)
+    abiertoPorMacro = True
+End Function
+
+Private Function ColumnaFinalizacionFOD(ByVal hoja As Worksheet) As Long
+    Dim celda As Range
+
+    ' K es la posición histórica. Si el encabezado confirma K, conservarla.
+    ColumnaFinalizacionFOD = 11
+    If EsEncabezadoFinalizacionFOD(hoja.Cells(1, 11).Value2) Then Exit Function
+
+    For Each celda In hoja.Range("G1:Q1")
+        If EsEncabezadoFinalizacionFOD(celda.Value2) Then
+            ColumnaFinalizacionFOD = celda.Column
+            Exit Function
+        End If
+    Next celda
+End Function
+
+Private Function EsEncabezadoFinalizacionFOD(ByVal valor As Variant) As Boolean
+    Dim encabezado As String
+
+    encabezado = UCase$(TextoFOD(valor))
+    encabezado = Replace(encabezado, "/", " ")
+    Do While InStr(encabezado, "  ") > 0
+        encabezado = Replace(encabezado, "  ", " ")
+    Loop
+
+    Select Case encabezado
+        Case "COMPLETION DATE", "COMPLETED DATE", "DATE COMPLETED", "COMPLETED ON", "COMPLETED AT", _
+             "DATE OF COMPLETION", "COMPLETION DATETIME", "COMPLETION DATE TIME", _
+             "COMPLETION DATE AND TIME", "COMPLETION DATE (UTC)", _
+             "COURSE COMPLETION DATE", "TRAINING COMPLETION DATE", "ITEM COMPLETION DATE", _
+             "FECHA FINALIZACION", "FECHA FINALIZACIÓN", "FECHA DE FINALIZACION", "FECHA DE FINALIZACIÓN"
+            EsEncabezadoFinalizacionFOD = True
+    End Select
+End Function
+
+Private Sub AsegurarFormatoFechaExportadaFOD(ByVal celdas As Range)
+    Dim reglaFecha As FormatCondition
+
+    celdas.NumberFormat = FORMATO_FECHA_FOD
+    If celdas.FormatConditions.Count = 0 Then Exit Sub
+
+    ' Aplicar solo el formato numérico en la copia exportada y dejar que las
+    ' reglas existentes sigan aportando colores y otros estilos.
+    Set reglaFecha = celdas.FormatConditions.Add(Type:=xlExpression, Formula1:="=1=1")
+    reglaFecha.NumberFormat = FORMATO_FECHA_FOD
+    reglaFecha.StopIfTrue = False
+    reglaFecha.SetFirstPriority
+End Sub
+
+Private Sub AsegurarRojoCaducadoFOD(ByVal celdas As Range)
+    Dim reglaCaducado As FormatCondition
+
+    If celdas.FormatConditions.Count = 0 Then Exit Sub
+    ' La plantilla puede tener reglas que sobreescriban el color de fuente de H.
+    Set reglaCaducado = celdas.FormatConditions.Add(Type:=xlCellValue, Operator:=xlEqual, _
+                                                   Formula1:="=""Caducado""")
+    reglaCaducado.Font.Color = RGB(255, 0, 0)
+    reglaCaducado.StopIfTrue = False
+    reglaCaducado.SetFirstPriority
+End Sub
+
+Private Function LeerFechaOrigenFOD(ByVal celda As Range, ByVal valor As Variant, _
+                                    ByVal origen1904 As Boolean) As Long
+    Dim serie As Long
+    Dim fechaInterna As Date
+    Dim dia As Long
+    Dim mes As Long
+    Dim serieInvertida As Long
+    Dim textoVisible As String
+    Dim finFecha As Long
+
+    serie = ParseFechaSinLocale(valor, origen1904)
+    LeerFechaOrigenFOD = serie
+    If serie = 0 Or VarType(valor) = vbString Then Exit Function
+
+    fechaInterna = DateAdd("d", serie, #12/30/1899#)
+    dia = Day(fechaInterna)
+    mes = Month(fechaInterna)
+    If dia > 12 Or dia = mes Then Exit Function
+
+    textoVisible = TextoFOD(celda.Text)
+    If Len(textoVisible) > 0 Then
+        If Len(Replace(textoVisible, "#", "")) = 0 Then
+            ' Recuperar la presentación cuando el ancho solo permite ver ####.
+            textoVisible = TextoFOD(TextoFechaSinLimiteDeAnchoFOD(celda, CDbl(valor)))
+        End If
+    End If
+
+    ' La hora que acompaña a la fecha visible no influye en el calendario.
+    finFecha = InStr(textoVisible, " ")
+    If finFecha > 0 Then textoVisible = Left$(textoVisible, finFecha - 1)
+    If InStr(textoVisible, "/") = 0 And InStr(textoVisible, "-") = 0 Then Exit Function
+
+    ' Admitir solo el intercambio exacto de día/mes del mismo año cuando
+    ' la celda de origen lo muestra así. Nunca invertir por ser ambigua.
+    serieInvertida = CLng(CDbl(DateSerial(Year(fechaInterna), dia, mes)))
+    If ParseFechaSinLocale(textoVisible, False) = serieInvertida Then
+        LeerFechaOrigenFOD = serieInvertida
+    End If
+End Function
+
+Private Function TextoFechaSinLimiteDeAnchoFOD(ByVal celda As Range, ByVal valor As Double) As String
+    On Error GoTo SinTexto
+    TextoFechaSinLimiteDeAnchoFOD = Application.WorksheetFunction.Text(valor, celda.DisplayFormat.NumberFormat)
+SinTexto:
+End Function
+
+Private Sub TrazarFechaOrigenFOD(ByVal celda As Range, ByVal sistema1904 As Boolean, _
+                                  Optional ByVal leerComoOrigen As Boolean = False)
+    Dim serie As Long
+    Dim fechaVerificada As String
+
+    If leerComoOrigen Then
+        serie = LeerFechaOrigenFOD(celda, celda.Value2, sistema1904)
+    Else
+        serie = ParseFechaSinLocale(celda.Value2, sistema1904)
+    End If
+    If serie <> 0 Then fechaVerificada = Format$(DateAdd("d", serie, #12/30/1899#), "yyyy-mm-dd")
+    Debug.Print "  " & celda.Address(False, False) & " | visible: " & celda.Text & _
+                " | valor: " & TextoFOD(celda.Value2) & " | fecha ISO: " & fechaVerificada
+End Sub
+
+Private Sub AplicarPendienteSinFechaFOD(ByVal personaData As Object, ByVal claveCurso As String, _
+                                         ByVal claveEstado As String, ByVal claveFecha As String)
+    Dim pendientesSinFecha As Object
+
+    Set pendientesSinFecha = personaData("PendientesSinFecha")
+    If Not pendientesSinFecha.Exists(personaData(claveCurso)) Then Exit Sub
+
+    ' Solo prevalece frente al historial de finalización del mismo curso.
+    Select Case personaData(claveEstado)
+        Case "Completed", "Completed (Equivalent)", "Completed (Caducado)"
+            personaData(claveEstado) = "Pending"
+            personaData(claveFecha) = 0&
+    End Select
+End Sub
+
+Private Sub ActualizarPendientesResumenFOD(ByVal hoja As Worksheet)
+    Dim rangoBusqueda As Range
+    Dim etiqueta As Range
+    Dim primeraDireccion As String
+    Dim ultimaColumna As Long
+    Dim columna As Long
+    Dim filaPendientes As Long
+    Dim poblacion As Range
+    Dim completados As Range
+    Dim cuadroActualizado As Boolean
+
+    Set rangoBusqueda = hoja.UsedRange
+    Set etiqueta = rangoBusqueda.Find(What:="PENDING", After:=rangoBusqueda.Cells(1, 1), _
+                                      LookIn:=xlValues, LookAt:=xlWhole, SearchOrder:=xlByRows, _
+                                      SearchDirection:=xlNext, MatchCase:=False, SearchFormat:=False)
+    If etiqueta Is Nothing Then
+        Err.Raise vbObjectError + 730, "ActualizarPendientesResumenFOD", _
+                  "No se encontró la fila PENDING en la hoja Resumen FOD."
+    End If
+
+    primeraDireccion = etiqueta.Address
+    Do
+        filaPendientes = etiqueta.Row
+        If filaPendientes >= 3 Then
+            If UCase$(TextoFOD(etiqueta.Offset(-2, 0).Value2)) = "POPULATION" And _
+               UCase$(TextoFOD(etiqueta.Offset(-1, 0).Value2)) = "COMPLETED" Then
+                ultimaColumna = hoja.Cells(filaPendientes - 2, hoja.Columns.Count).End(xlToLeft).Column
+                For columna = etiqueta.Column + 1 To ultimaColumna
+                    Set poblacion = hoja.Cells(filaPendientes - 2, columna)
+                    Set completados = hoja.Cells(filaPendientes - 1, columna)
+                    If TieneDatoResumenFOD(poblacion) And TieneDatoResumenFOD(completados) Then
+                        hoja.Cells(filaPendientes, columna).FormulaR1C1 = _
+                            "=IF(COUNT(R[-2]C:R[-1]C)=2,R[-2]C-R[-1]C,"""")"
+                        cuadroActualizado = True
+                    End If
+                Next columna
+            End If
+        End If
+        Set etiqueta = rangoBusqueda.FindNext(After:=etiqueta)
+        If etiqueta Is Nothing Then Exit Do
+    Loop Until etiqueta.Address = primeraDireccion
+
+    If Not cuadroActualizado Then
+        Err.Raise vbObjectError + 731, "ActualizarPendientesResumenFOD", _
+                  "No hay columnas con POPULATION y COMPLETED encima de PENDING en Resumen FOD."
+    End If
+End Sub
+
+Private Function TieneDatoResumenFOD(ByVal celda As Range) As Boolean
+    Dim valor As Variant
+
+    If celda.HasFormula Then
+        TieneDatoResumenFOD = True
+    Else
+        valor = celda.Value2
+        If Not IsEmpty(valor) Then TieneDatoResumenFOD = IsNumeric(valor)
+    End If
+End Function
+
+Private Function TextoFOD(ByVal valor As Variant) As String
+    Dim texto As String
+
+    If IsError(valor) Or IsNull(valor) Or IsEmpty(valor) Then Exit Function
+    texto = Replace(CStr(valor), ChrW(160), " ")
+    texto = Replace(texto, vbTab, " ")
+    texto = Replace(texto, vbCr, " ")
+    TextoFOD = Trim$(Replace(texto, vbLf, " "))
+End Function
+
+Private Function NormalizarEstadoFOD(ByVal valor As Variant) As String
+    Dim estado As String
+
+    estado = TextoFOD(valor)
+    Do While InStr(estado, "  ") > 0
+        estado = Replace(estado, "  ", " ")
+    Loop
+
+    Select Case UCase$(estado)
+        Case "COMPLETED": NormalizarEstadoFOD = "Completed"
+        Case "COMPLETED (EQUIVALENT)": NormalizarEstadoFOD = "Completed (Equivalent)"
+        Case "COMPLETED (CADUCADO)": NormalizarEstadoFOD = "Completed (Caducado)"
+        Case "REGISTERED": NormalizarEstadoFOD = "Registered"
+        Case "EXEMPT": NormalizarEstadoFOD = "Exempt"
+        Case "", "PENDING": NormalizarEstadoFOD = "Pending"
+        Case Else: NormalizarEstadoFOD = estado
+    End Select
+End Function
+
+Private Function PrioridadEmpateFOD(ByVal estado As String) As Long
+    ' Ante dos filas de la misma fecha, mostrar primero el estado más conservador.
+    Select Case estado
+        Case "Completed": PrioridadEmpateFOD = 1
+        Case "Completed (Equivalent)": PrioridadEmpateFOD = 2
+        Case "Completed (Caducado)": PrioridadEmpateFOD = 3
+        Case "Exempt": PrioridadEmpateFOD = 4
+        Case "Registered": PrioridadEmpateFOD = 5
+        Case Else: PrioridadEmpateFOD = 6
+    End Select
+End Function
+
+Private Function EsMejorRegistroFOD(ByVal estado As String, ByVal fechaOrden As Long, ByVal fechaCurso As Long, _
+                                    ByVal estadoAnterior As String, ByVal fechaOrdenAnterior As Long, _
+                                    ByVal fechaCursoAnterior As Long) As Boolean
+    Dim prioridad As Long
+    Dim prioridadAnterior As Long
+
+    If estadoAnterior = "" Then
+        EsMejorRegistroFOD = True
+    ElseIf fechaOrden <> fechaOrdenAnterior Then
+        EsMejorRegistroFOD = (fechaOrden > fechaOrdenAnterior)
+    Else
+        prioridad = PrioridadEmpateFOD(estado)
+        prioridadAnterior = PrioridadEmpateFOD(estadoAnterior)
+        If prioridad <> prioridadAnterior Then
+            EsMejorRegistroFOD = (prioridad > prioridadAnterior)
+        Else
+            EsMejorRegistroFOD = (fechaCurso <> 0 And fechaCursoAnterior = 0)
+        End If
+    End If
+End Function
+
+Private Function EstadoConCaducidadFOD(ByVal estado As String, ByVal fechaCurso As Long, _
+                                       ByVal fechaInforme As Date, ByVal esCursoReciente As Boolean) As String
+    EstadoConCaducidadFOD = estado
+    Select Case estado
+        Case ""
+            EstadoConCaducidadFOD = "Pending"
+        Case "Completed (Caducado)"
+            If esCursoReciente Then EstadoConCaducidadFOD = "Caducado"
+        Case "Completed", "Completed (Equivalent)"
+            If fechaCurso <> 0 Then
+                If esCursoReciente Then
+                    ' Comparar con la fecha equivalente del año anterior.
+                    If fechaCurso < CDbl(DateAdd("yyyy", -1, fechaInforme)) Then
+                        EstadoConCaducidadFOD = "Caducado"
+                    End If
+                ElseIf Fix(CDbl(fechaInforme)) - fechaCurso >= DIAS_CADUCIDAD_FOD Then
+                    EstadoConCaducidadFOD = "Completed (Caducado)"
+                End If
+            End If
+    End Select
+End Function
+
+Private Sub EscribirEstadoFOD(ByVal celdaEstado As Range, ByVal celdaFecha As Range, _
+                              ByVal estado As String, ByVal fechaCurso As Long, _
+                              ByVal fechaInforme As Date, ByVal destino1904 As Boolean, _
+                              Optional ByVal esCursoReciente As Boolean = False)
+    Dim serieExcel As Long
+
+    estado = EstadoConCaducidadFOD(estado, fechaCurso, fechaInforme, esCursoReciente)
+    celdaEstado.NumberFormat = "@"
+    celdaEstado.Value2 = estado
+
+    If fechaCurso <> 0 Then
+        serieExcel = fechaCurso
+        If destino1904 Then
+            serieExcel = serieExcel - DESFASE_FECHAS_1904
+        ElseIf serieExcel <= 60 Then
+            serieExcel = serieExcel - 1
+        End If
+        celdaFecha.Value2 = serieExcel
+    End If
+
+    Select Case estado
+        Case "Completed", "Completed (Equivalent)", "Exempt"
+            celdaEstado.Font.Color = RGB(0, 128, 0)
+        Case "Registered"
+            celdaEstado.Font.Color = RGB(0, 0, 255)
+        Case "Caducado"
+            celdaEstado.Font.Color = RGB(255, 0, 0)
+        Case "Completed (Caducado)"
+            celdaEstado.Font.Color = RGB(255, 165, 0)
+            If fechaCurso <> 0 Then celdaFecha.Interior.Color = RGB(255, 0, 0)
+        Case Else
+            celdaEstado.Font.Color = RGB(255, 0, 0)
+    End Select
+End Sub
+
+Private Function ParseFechaSinLocale(ByVal valor As Variant, ByVal origen1904 As Boolean) As Long
+    ' Devuelve un día de calendario comparable entre libros. Cero indica fecha ausente o inválida.
+    Dim texto As String
+    Dim partes() As String
+    Dim dia As Long
+    Dim mes As Long
+    Dim anio As Long
+    Dim fecha As Date
+    Dim serie As Double
+    Dim separadorHora As Long
+
+    Select Case VarType(valor)
+        Case vbDate
+            ' Admite valores Date aunque la lectura normal del informe usa Value2.
+            ParseFechaSinLocale = CLng(Fix(CDbl(valor)))
+            Exit Function
+        Case vbDouble, vbSingle, vbInteger, vbLong, vbByte, vbCurrency, vbDecimal
+            ParseFechaSinLocale = SerieFechaFOD(CDbl(valor), origen1904)
+            Exit Function
+        Case vbString
+            texto = TextoFOD(valor)
+        Case Else
+            Exit Function
+    End Select
+
+    If Len(texto) = 0 Then Exit Function
+
+    ' Los números de serie en texto solo admiten dígitos y punto decimal.
+    If Not texto Like "*[!0-9.]*" Then
+        partes = Split(texto, ".")
+        If UBound(partes) <= 1 And Len(texto) <= 20 Then
+            If Len(partes(0)) = 0 Then Exit Function
+            If UBound(partes) = 1 Then
+                If Len(partes(1)) = 0 Then Exit Function
+            End If
+            serie = Val(texto)
+            ParseFechaSinLocale = SerieFechaFOD(serie, origen1904)
+        End If
+        Exit Function
+    End If
+
+    ' Admitir una parte horaria de 24 h en exportaciones de fecha y hora.
+    separadorHora = InStr(texto, " ")
+    If separadorHora = 0 Then separadorHora = InStr(texto, "T")
+    If separadorHora > 0 Then
+        If Not HoraValidaFOD(Trim$(Mid$(texto, separadorHora + 1))) Then Exit Function
+        texto = Left$(texto, separadorHora - 1)
+    End If
+
+    If InStr(texto, "/") > 0 Then
+        partes = Split(texto, "/")
+    Else
+        partes = Split(texto, "-")
+    End If
+    If UBound(partes) <> 2 Then Exit Function
+    If Not SoloDigitosFOD(partes(0)) Then Exit Function
+    If Not SoloDigitosFOD(partes(1)) Then Exit Function
+    If Not SoloDigitosFOD(partes(2)) Then Exit Function
+
+    If Len(partes(0)) = 4 And InStr(texto, "/") = 0 Then
+        ' ISO yyyy-mm-dd.
+        If Len(partes(1)) <> 2 Or Len(partes(2)) <> 2 Then Exit Function
+        anio = CLng(partes(0))
+        mes = CLng(partes(1))
+        dia = CLng(partes(2))
+    Else
+        ' Interpretar siempre día/mes/año, incluso cuando día y mes son menores de 13.
+        If Len(partes(0)) > 2 Or Len(partes(1)) > 2 Then Exit Function
+        If Len(partes(2)) <> 2 And Len(partes(2)) <> 4 Then Exit Function
+        dia = CLng(partes(0))
+        mes = CLng(partes(1))
+        anio = CLng(partes(2))
+        If Len(partes(2)) = 2 Then anio = 2000 + anio
+    End If
+
+    If anio < 1900 Or mes < 1 Or mes > 12 Or dia < 1 Or dia > 31 Then Exit Function
+    fecha = DateSerial(anio, mes, dia)
+    ' DateSerial ajusta automáticamente días fuera del mes. Rechazar esos valores.
+    If Year(fecha) <> anio Or Month(fecha) <> mes Or Day(fecha) <> dia Then Exit Function
+    ParseFechaSinLocale = CLng(CDbl(fecha))
+End Function
+
+Private Function SoloDigitosFOD(ByVal texto As String) As Boolean
+    SoloDigitosFOD = (Len(texto) > 0 And Not texto Like "*[!0-9]*")
+End Function
+
+Private Function HoraValidaFOD(ByVal texto As String) As Boolean
+    Dim partes() As String
+
+    If Not (texto Like "#:##" Or texto Like "##:##" Or _
+            texto Like "#:##:##" Or texto Like "##:##:##") Then Exit Function
+    partes = Split(texto, ":")
+    If CLng(partes(0)) > 23 Or CLng(partes(1)) > 59 Then Exit Function
+    If UBound(partes) = 2 Then
+        If CLng(partes(2)) > 59 Then Exit Function
+    End If
+    HoraValidaFOD = True
+End Function
+
+Private Function SerieFechaFOD(ByVal serie As Double, ByVal origen1904 As Boolean) As Long
+    If serie < 0 Then Exit Function
+    serie = Fix(serie) ' Quitar la fracción horaria solo después de identificar un número.
+    If origen1904 Then
+        serie = serie + DESFASE_FECHAS_1904
+    Else
+        ' Excel 1900 contiene el 29/02/1900 ficticio. VBA usa el calendario real.
+        If serie = 0 Or serie = 60 Then Exit Function
+        If serie < 60 Then serie = serie + 1
+    End If
+    If serie <= SERIE_MAXIMA_FOD Then SerieFechaFOD = CLng(serie)
+End Function
+
+
+Function IsInCourseList(courseName As String, courseList As Object) As Boolean
+    Dim k As Variant
+    For Each k In courseList.Keys
+        If courseName = courseList(k) Then
+            IsInCourseList = True
+            Exit Function
+        End If
+    Next k
+    IsInCourseList = False
+End Function
